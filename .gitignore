@@ -1,12 +1,8 @@
 *.idea
 */__pycache__/*
-.spyproject/*
 *.npy
 *.npz
 *.png
 *.gif
 *.log
 outputs/*
-network_files/*
-standalone_builds/*
-/outputs/
