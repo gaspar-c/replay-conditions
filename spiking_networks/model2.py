@@ -8,7 +8,7 @@ from brian2 import Network, Hz, mV, nS, ms, second, pF, pA
 from general_code.aux_functions import xprint
 from spiking_networks.simulations import SimElement, run_network_sim
 from general_code.parameters import Parameter, initialize_params
-from spiking_networks.tests import NetworkTests, TestReplay, TriggerSpikes
+from spiking_networks.tests import NetworkTests, TestReplay, TriggerSpikes, TestFitV
 from spiking_networks.network import ChangeAttribute
 from spiking_networks.plot_spiking_trace import PlotRaster, PlotPopRate, PlotV, PlotV1D
 from spiking_networks import network as net, synapses as syn, connectivities as conn
@@ -19,6 +19,8 @@ def run_simulation(options):
 
     sim_params = {
         'n_stims': Parameter(1),
+        'stdp_time': Parameter(5, second),
+        'test_ai': Parameter(False),
         'n_p': Parameter(20000),
         'm_p': Parameter(500),
         'n_b': Parameter(5000),
@@ -155,7 +157,7 @@ def run_simulation(options):
     events = []
     monitors = []
     stdp_on_time = 0 * second
-    stdp_off_time = 5 * second
+    stdp_off_time = sim_params['stdp_time'].get_param()
 
     syn_pb_pops = ['syn_pb']
     for target_pop in syn_pb_pops:
@@ -169,6 +171,20 @@ def run_simulation(options):
                                       attribute='eta',
                                       value=0.00))
 
+    
+
+    # Test AI state
+    test_ai = sim_params['test_ai'].get_param()
+    if test_ai:
+        events.append(NetworkTests(monitors=monitors,
+                                start=stdp_off_time - 0.5 * second, stop=stdp_off_time,
+                                max_record=sim_params['max_record'].get_param(),
+                                test_list=[
+                                    TestFitV(pops=[pop_p_sett], asb=[10], time=[stdp_off_time]),
+                                ],
+                                plot_list=[]
+                                ))
+    
     # Test Replay
     wait_time = 1 * second
     n_stims = sim_params['n_stims'].get_param()

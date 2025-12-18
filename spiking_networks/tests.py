@@ -125,6 +125,7 @@ class NetworkTests:
                         str(options['sim_idx']) + '_[%.3f-%.3f]s' %
                         (test_range[0] / second, test_range[1] / second))
             fig_to_save.savefig(fig_name + '.png', dpi=300, bbox_inches='tight')
+            fig_to_save.savefig(fig_name + '.svg', dpi=600, bbox_inches='tight')
             plt.close(fig_to_save)
 
 
@@ -490,3 +491,192 @@ class TestReplay:
         replay_file = open(options['output_dir'] + options['group_label'] + '/0_group_replay.txt', 'a')
         replay_file.write(replay_str + '\n')
         replay_file.close()
+
+
+def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
+    """
+    Plot voltage snapshot histogram with Gaussian fit.
+    
+    Args:
+        v_snapshot: Array of voltage values in mV
+        fig_name: Base filename (without extension) for saving the plot
+        log: Optional log file for printing statistics
+    
+    Returns:
+        Dictionary with fit parameters (gauss_mean, gauss_std, gauss_u, gauss_x0, gauss_r2)
+    """
+    from scipy.optimize import curve_fit
+    from general_code.aux_functions import xprint
+    
+    def gaussian(x, amp, cen, wid):
+        return amp * np.exp(-(x - cen) ** 2 / (2 * wid ** 2))
+    
+    # Create histogram
+    counts, bin_edges = np.histogram(v_snapshot, bins=np.linspace(-60, -50, 41), density=False)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    
+    # Calculate basic statistics
+    v_mean = np.mean(v_snapshot)
+    v_std = np.std(v_snapshot)
+    
+    # Try to fit Gaussian
+    gauss_mean = np.nan
+    gauss_std = np.nan
+    gauss_u = np.nan
+    gauss_x0 = np.nan
+    gauss_r2 = np.nan
+    fit_gauss = False
+    
+    try:
+        fit_gauss_params, _ = curve_fit(gaussian, bin_centers, counts,
+                                      p0=[np.max(counts), v_mean, v_std])
+        fit_gauss = True
+        gauss_height, gauss_mean, gauss_std = fit_gauss_params
+        gauss_u = gauss_std * 4
+        gauss_x0 = gauss_mean + 2 * gauss_std + 50
+        
+        # Calculate R²
+        residuals = counts - gaussian(bin_centers, *fit_gauss_params)
+        ss_res = np.sum(residuals ** 2)
+        ss_tot = np.sum((counts - np.mean(counts)) ** 2)
+        gauss_r2 = 1 - (ss_res / ss_tot)
+        
+        xprint('\n=========== V GAUSSIAN FIT ===========', log)
+        xprint('v (mean +- std) = (%.3f +- %.3f) mV' % (v_mean, v_std), log)
+        xprint('gauss mean = %.3f mV' % gauss_mean, log)
+        xprint('gauss std = %.3f mV' % gauss_std, log)
+        xprint('U = %.3f mV' % gauss_u, log)
+        xprint('x0 = %.3f mV' % gauss_x0, log)
+        xprint('U - x0 = %.3f mV' % (gauss_u - gauss_x0), log)
+        xprint('gauss r2 = %f\n' % gauss_r2, log)
+        
+    except (RuntimeError, ValueError) as e:
+        xprint("WARNING: Couldn't fit voltage distribution to gaussian: %s" % e, log)
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(2.5, 2))
+    font_size = 8.3
+    ax.bar(bin_edges[:-1], counts, width=np.diff(bin_edges), align='edge', color='black')
+    
+    v_range = max(v_snapshot) - min(v_snapshot)
+    x_values = np.linspace(min(bin_centers) - v_range * 0.05, max(bin_centers) + v_range * 0.05, 100)
+    max_plot = -49.8
+    
+    if fit_gauss and gauss_r2 > 0.5:
+        if annotate:
+            fig.text(0.92, 0.90, r'Gauss $R^2$ = %.2f' % gauss_r2, fontsize=font_size, va='top')
+            fig.text(0.92, 0.83, r'- $\mu$ = %.2f mV' % gauss_mean, fontsize=font_size, va='top')
+            fig.text(0.92, 0.76, r'- $\sigma$ = %.2f mV' % gauss_std, fontsize=font_size, va='top')
+            fig.text(0.92, 0.69, r'- $U$ = %.2f mV' % gauss_u, fontsize=font_size, va='top')
+            fig.text(0.92, 0.62, r'- $x_0$ = %.2f mV' % gauss_x0, fontsize=font_size, va='top')
+            fig.text(0.92, 0.55, r'- $U - x_0$ = %.2f mV' % (gauss_u - gauss_x0), fontsize=font_size, va='top')
+        ax.plot(x_values, gaussian(x_values, *fit_gauss_params), color='black', lw=2)
+        ax.plot(x_values, gaussian(x_values, *fit_gauss_params), color='darkgray', lw=1.5, alpha=0.95)
+        ax.axvspan(gauss_mean - 2*gauss_std, gauss_mean + 2*gauss_std, 
+                   alpha=0.2, color='lightblue', zorder=0)
+        if gauss_mean + 2*gauss_std > max_plot:
+            max_plot = gauss_mean + 2*gauss_std + 0.2
+    
+    ax.set_xlim([-61, max_plot])
+    ax.set_ylim([0, 150])
+    ax.axvline(-50, color='black', lw=1.5, ls='--')
+    ax.set_xticks([-60, -55, -50], labels=['-60', '', '-50'], fontsize=font_size)
+    ax.set_xlabel(r'$v$ (mV)', fontsize=font_size)
+    ax.set_ylabel('count', fontsize=font_size)
+    
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.tick_params(direction='out', length=3, colors='black', labelsize=font_size)
+    
+    # Save plot
+    fig.savefig(fig_name + '.png', dpi=300, bbox_inches='tight')
+    fig.savefig(fig_name + '.svg', bbox_inches='tight')
+    plt.close(fig)
+    
+    return {
+        'gauss_mean': gauss_mean,
+        'gauss_std': gauss_std,
+        'gauss_u': gauss_u,
+        'gauss_x0': gauss_x0,
+        'gauss_r2': gauss_r2
+    }
+
+
+class TestFitV:
+    """
+    object to test if v distribution can be fitted by a function
+    """
+    def __init__(self, pops=[], asb=[], time=[]):
+        """
+        Args:
+            pops: list of populations to test
+        """
+        self.pops = pops
+        self.asb = asb
+        self.time = time
+        self.monitor_types = ['v_%d' % asb_idx for asb_idx in asb]
+
+    def perform_test(self, network, settings, test_range, test_data, log=None):
+
+        sim_params = settings.sim_params
+        options = settings.options
+        group_params = options['group_param_overrides'].keys()
+
+        for pop in self.pops:
+            for asb_idx in self.asb:
+                stm_name = 'stm_%s_asb_%d_v' % (pop.name, asb_idx)
+                
+                for time_i in self.time:
+
+                    # create replay properties file
+                    v_file_path = options['output_dir'] + options['group_label'] + \
+                                  '/0_group_v_pop_%s_%d_%.3fs.txt' % (pop.name, asb_idx, time_i)
+                    
+                    if not os.path.exists(v_file_path):
+                        with open(v_file_path, 'w') as v_file:
+
+                            v_header = 'sim# \t '
+                            for param_name in group_params:
+                                v_header += param_name + ' \t '
+
+                            v_header += ('v_mean \t v_std \t gauss_mean \t gauss_std \t U \t x0')
+                            v_file.write(v_header + '\n')
+                            v_file.close()
+
+                    param_vals = '%d \t ' % options['sim_idx']
+                    for param_name in group_params:
+                        param_vals += sim_params[param_name].get_str() + ' \t '
+
+                    time_arg = np.argmin(np.abs(network[stm_name].t - time_i))
+                    v_snapshot = np.array(network[stm_name].v[:, time_arg] / mV)
+                    counts, bin_edges = np.histogram(v_snapshot, bins=np.linspace(-60, -50, 41), density=False)
+                    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+                    gauss_mean = np.nan
+                    gauss_std = np.nan
+                    gauss_u = np.nan
+                    gauss_x0 = np.nan
+
+                    v_mean = np.mean(v_snapshot)
+                    v_std = np.std(v_snapshot)
+
+                    # Save v_snapshot to file
+                    fig_name = (options['output_dir'] + options['group_label'] + '/sim' +
+                                str(options['sim_idx']) + '_v%s_%.3fs' % (asb_idx, time_i))
+                    np.savetxt(fig_name + '_value.txt', v_snapshot)
+                    
+                    # Plot using shared function
+                    fit_params = fit_v_snapshot(v_snapshot, fig_name, log)
+                    gauss_mean = fit_params['gauss_mean']
+                    gauss_std = fit_params['gauss_std']
+                    gauss_u = fit_params['gauss_u']
+                    gauss_x0 = fit_params['gauss_x0']
+
+                    # print to file
+                    v_mean = np.mean(v_snapshot)
+                    v_std = np.std(v_snapshot)
+                    v_str = param_vals + '%.3f \t %.3f \t %.3f \t %.3f \t %.3f \t %.3f' % (
+                        v_mean, v_std, gauss_mean, gauss_std, gauss_u, gauss_x0)
+                    v_file = open(v_file_path, 'a')
+                    v_file.write(v_str + '\n')
+                    v_file.close()

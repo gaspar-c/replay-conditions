@@ -12,8 +12,8 @@ from population_model.theory import cond_inf_q
 from scipy.stats import pearsonr
 from general_code.aux_functions import xprint, bool_from_str, float_from_str
 
-rc('mathtext', fontset='stix')
-rc('font', family='sans-serif')
+mpl.rcParams['font.family'] = 'sans-serif'
+mpl.rcParams['font.sans-serif'] = ['Arial']
 
 
 def get_replay_pivot(group_path, qual_thres=0.8, act_low_thres=0.9, act_up_thres=1.1):
@@ -348,6 +348,7 @@ def group_plot(group_path, field,
     # Save figure to disk
     figname = group_path + '/0_group_%s' % field
     plt.savefig(figname + '.png', dpi=300, bbox_inches='tight')
+    plt.savefig(figname + '.svg', dpi=600, bbox_inches='tight')
 
     plt.close()
     
