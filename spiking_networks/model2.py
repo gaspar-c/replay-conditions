@@ -8,7 +8,7 @@ from brian2 import Network, Hz, mV, nS, ms, second, pF, pA
 from general_code.aux_functions import xprint
 from spiking_networks.simulations import SimElement, run_network_sim
 from general_code.parameters import Parameter, initialize_params
-from spiking_networks.tests import NetworkTests, TestReplay, TriggerSpikes
+from spiking_networks.tests import NetworkTests, TestReplay, TriggerSpikes, TestFitV
 from spiking_networks.network import ChangeAttribute
 from spiking_networks.plot_spiking_trace import PlotRaster, PlotPopRate, PlotV, PlotV1D
 from spiking_networks import network as net, synapses as syn, connectivities as conn
@@ -169,6 +169,18 @@ def run_simulation(options):
                                       attribute='eta',
                                       value=0.00))
 
+    # # Test AI state
+    # events.append(NetworkTests(monitors=monitors,
+    #                            start=stdp_off_time - 0.5 * second, stop=stdp_off_time,
+    #                            max_record=sim_params['max_record'].get_param(),
+    #                            test_list=[
+    #                                TestFitV(pops=[pop_p_sett], asb=[10], time=[stdp_off_time - 150 * ms]),
+    #                            ],
+    #                            plot_list=[
+    #                                PlotRaster(pops=[pop_p_sett, pop_b_sett]),
+    #                                PlotV1D(pop=pop_p_sett, time=[stdp_off_time - 150 * ms], asb=[10]),
+    #                            ]))
+    
     # Test Replay
     wait_time = 1 * second
     n_stims = sim_params['n_stims'].get_param()

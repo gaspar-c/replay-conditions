@@ -5,6 +5,7 @@ Generates Figure S3, panels A and B.
 
 import time
 import os
+import numpy as np
 from brian2 import nS
 from general_code.aux_functions import get_model_number
 from general_code.group_simulations import run_sim_group
@@ -31,7 +32,10 @@ if __name__ == '__main__':
         g_jb = 0.40
     elif scale == 'g':
         p_jb = 0.01
-        g_jb = 0.40* ei_ratio / 4
+        g_jb = 0.40 * ei_ratio / 4
+    elif scale == 'g_sqrt':
+        p_jb = 0.01
+        g_jb = 0.40 * np.sqrt(ei_ratio / 4)
    
     # Set up group parameters
     group_params = {

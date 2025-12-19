@@ -22,7 +22,7 @@ from spiking_networks.group_replay_analysis import get_correlations, group_plot,
 from spiking_networks.model2 import run_simulation
 from general_code.aux_functions import select_group_label_dir, get_model_number
 
-ei_ratio = 2  # ratio of excitatory to inhibitory neurons
+ei_ratio = 8  # ratio of excitatory to inhibitory neurons
 scale = 'g'
 
 conn_seeds = [1]   # random seeds; in manuscript, conn_seeds = [1, 2, 3, 4, 5]
@@ -49,7 +49,7 @@ def sim_model():
         g_jb = 0.40
     elif scale == 'g':
         p_jb = 0.01
-        g_jb = 0.40* ei_ratio / 4
+        g_jb = 0.40 * np.sqrt(ei_ratio / 4)
    
     d_num = 18
     group_params = {
@@ -72,11 +72,11 @@ def sim_model():
 
 
 def plot_results(group_path=None):
-    """Plot the results for figure 1D. If group_path is None, select interactively."""
+    """Plot the results for figure S3C. If group_path is None, select interactively."""
 
     # Select the output directory if not provided
     if group_path is None:
-        group_path = select_group_label_dir('outputs', 'fig1D_model')
+        group_path = select_group_label_dir('outputs', 'figS3C_')
 
     # Generate pivot table
     get_replay_pivot(group_path)
