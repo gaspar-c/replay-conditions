@@ -790,3 +790,4 @@ def create_figure(plot_params, n_time_ticks, subplot_groups, test_range,
     plt.subplots_adjust(wspace=0.15, hspace=0.15)
 
     return fig
+
