@@ -504,7 +504,7 @@ class TestFitV:
         self.pops = pops
         self.asb = asb
         self.time = time
-        self.monitor_types = ['v']
+        self.monitor_types = ['v_%d' % asb_idx for asb_idx in asb]
 
     def perform_test(self, network, settings, test_range, test_data, log=None):
 
@@ -539,7 +539,7 @@ class TestFitV:
 
                     time_arg = np.argmin(np.abs(network[stm_name].t - time_i))
                     v_snapshot = np.array(network[stm_name].v[:, time_arg] / mV)
-                    counts, bin_edges = np.histogram(v_snapshot, bins=40, density=True)
+                    counts, bin_edges = np.histogram(v_snapshot, bins=np.linspace(-60, -50, 41), density=False)
                     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
                     gauss_mean = np.nan
@@ -566,6 +566,7 @@ class TestFitV:
                         xprint('gauss std = %.3f mV' % gauss_std, log)
                         xprint('U = %.3f mV' % gauss_u, log)
                         xprint('x0 = %.3f mV' % gauss_x0, log)
+                        xprint('U - x0 = %.3f mV' % (gauss_u - gauss_x0), log)
 
                         # find r2 of gaussian
                         residuals = counts - gaussian(bin_centers, *fit_gauss_params)
@@ -587,13 +588,10 @@ class TestFitV:
                     # plot
                     fig, ax = plt.subplots(figsize=(2.5, 2))
                     font_size = 8.3
-                    counts_plot, bin_edges_plot = np.histogram(v_snapshot, bins=40, density=True)
-                    bin_centers_plot = (bin_edges_plot[:-1] + bin_edges_plot[1:]) / 2
-
-                    ax.bar(bin_centers_plot, counts_plot, width=0.2, color='black')
+                    ax.bar(bin_edges[:-1], counts, width=np.diff(bin_edges), align='edge', color='black')
 
                     v_range = max(v_snapshot) - min(v_snapshot)
-                    x_values = np.linspace(min(bin_centers_plot) - v_range * 0.05, max(bin_centers_plot) + v_range * 0.05, 100)
+                    x_values = np.linspace(min(bin_centers) - v_range * 0.05, max(bin_centers) + v_range * 0.05, 100)
                     max_plot = -49.8
                     if fit_gauss:
                         fig.text(0.92, 0.90, r'Gauss $R^2$ = %.2f' % gauss_r2, fontsize=font_size, va='top')
@@ -601,6 +599,7 @@ class TestFitV:
                         fig.text(0.92, 0.76, r'- $\sigma$ = %.2f mV' % gauss_std, fontsize=font_size, va='top')
                         fig.text(0.92, 0.69, r'- $U$ = %.2f mV' % gauss_u, fontsize=font_size, va='top')
                         fig.text(0.92, 0.62, r'- $x_0$ = %.2f mV' % gauss_x0, fontsize=font_size, va='top')
+                        fig.text(0.92, 0.55, r'- $U - x_0$ = %.2f mV' % (gauss_u - gauss_x0), fontsize=font_size, va='top')
                         ax.plot(x_values, gaussian(x_values, *fit_gauss_params), color='black', lw=2)
                         ax.plot(x_values, gaussian(x_values, *fit_gauss_params), color='darkgray', lw=1.5, alpha=0.95)
                         ax.axvspan(gauss_mean - 2*gauss_std, gauss_mean + 2*gauss_std, 
@@ -609,6 +608,7 @@ class TestFitV:
                             max_plot = gauss_mean + 2*gauss_std + 0.2
 
                     ax.set_xlim([-61, max_plot])
+                    ax.set_ylim([0, 200])
                     ax.axvline(-50, color='black', lw=1.5, ls='--')
                     ax.set_xticks([-60, -55, -50], labels=['-60', '', '-50'], fontsize=font_size)
                     ax.set_xlabel(r'$v$ (mV)', fontsize=font_size)
@@ -620,5 +620,7 @@ class TestFitV:
 
                     fig_name = (options['output_dir'] + options['group_label'] + '/sim' +
                                 str(options['sim_idx']) + '_v%s_%.3fs' % (asb_idx, time_i))
+                    np.savetxt(fig_name + '_value.txt', v_snapshot)
                     fig.savefig(fig_name + '.png', dpi=300, bbox_inches='tight')
+                    fig.savefig(fig_name + '.svg', bbox_inches='tight')
                     

@@ -19,6 +19,8 @@ def run_simulation(options):
 
     sim_params = {
         'n_stims': Parameter(1),
+        'stdp_time': Parameter(5, second),
+        'test_ai': Parameter(False),
         'n_p': Parameter(20000),
         'm_p': Parameter(500),
         'n_b': Parameter(5000),
@@ -155,7 +157,7 @@ def run_simulation(options):
     events = []
     monitors = []
     stdp_on_time = 0 * second
-    stdp_off_time = 5 * second
+    stdp_off_time = sim_params['stdp_time'].get_param()
 
     syn_pb_pops = ['syn_pb']
     for target_pop in syn_pb_pops:
@@ -169,17 +171,19 @@ def run_simulation(options):
                                       attribute='eta',
                                       value=0.00))
 
-    # # Test AI state
-    # events.append(NetworkTests(monitors=monitors,
-    #                            start=stdp_off_time - 0.5 * second, stop=stdp_off_time,
-    #                            max_record=sim_params['max_record'].get_param(),
-    #                            test_list=[
-    #                                TestFitV(pops=[pop_p_sett], asb=[10], time=[stdp_off_time - 150 * ms]),
-    #                            ],
-    #                            plot_list=[
-    #                                PlotRaster(pops=[pop_p_sett, pop_b_sett]),
-    #                                PlotV1D(pop=pop_p_sett, time=[stdp_off_time - 150 * ms], asb=[10]),
-    #                            ]))
+    
+
+    # Test AI state
+    test_ai = sim_params['test_ai'].get_param()
+    if test_ai:
+        events.append(NetworkTests(monitors=monitors,
+                                start=stdp_off_time - 0.5 * second, stop=stdp_off_time,
+                                max_record=sim_params['max_record'].get_param(),
+                                test_list=[
+                                    TestFitV(pops=[pop_p_sett], asb=[10], time=[stdp_off_time]),
+                                ],
+                                plot_list=[]
+                                ))
     
     # Test Replay
     wait_time = 1 * second

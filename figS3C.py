@@ -17,13 +17,11 @@ import time
 import os
 import sys
 import numpy as np
-from brian2 import nS
 from spiking_networks.group_replay_analysis import get_correlations, group_plot, get_replay_pivot
 from spiking_networks.model2 import run_simulation
-from general_code.aux_functions import select_group_label_dir, get_model_number
+from general_code.aux_functions import select_group_label_dir
 
 ei_ratio = 8  # ratio of excitatory to inhibitory neurons
-scale = 'g'
 
 conn_seeds = [1]   # random seeds; in manuscript, conn_seeds = [1, 2, 3, 4, 5]
 num_stims = 1      # number of stimulations per network; in manuscript, num_stims = 5
@@ -34,7 +32,7 @@ def sim_model():
     from general_code.group_simulations import run_sim_group
 
     # Set up group options
-    group_label = f'figS3C_' + 'r%d_scale_%s_' % (ei_ratio, scale) + time.strftime("%Y%m%d_%H%M%S")
+    group_label = f'figS3C_' + 'r%d_' % ei_ratio + time.strftime("%Y%m%d_%H%M%S")
     group_options = {
         'max_cores': 50,
         'output_dir': os.getcwd() + '/outputs/',
@@ -44,12 +42,7 @@ def sim_model():
 
     # Set up group params
     n_b = int(20000 / ei_ratio)
-    if scale == 'p':
-        p_jb = 0.01 * ei_ratio / 4    
-        g_jb = 0.40
-    elif scale == 'g':
-        p_jb = 0.01
-        g_jb = 0.40 * np.sqrt(ei_ratio / 4)
+    p_jb = 0.01 * ei_ratio / 4    
    
     d_num = 18
     group_params = {
@@ -59,9 +52,7 @@ def sim_model():
         'p_ff': list(np.repeat(np.round(np.linspace(0.00, 0.17, d_num), 3), d_num)) * len(conn_seeds),
         'n_b': [n_b],
         'p_bb': [p_jb],
-        'p_pb': [p_jb],
-        'g_bb': [(g_jb, nS)],
-        'g_pb_init': [(g_jb, nS)],        
+        'p_pb': [p_jb]
     }
 
     # Dynamically import the model's run_simulation function
