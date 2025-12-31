@@ -1,31 +1,38 @@
 """
 figS2AB.py
 Generates Figure S2, panels A and B.
-
-To reproduce manuscript results, manually change w_ee to 40, 50, or 60.
 """
 
 import time
 import os
-from brian2 import mV
 from general_code.group_simulations import run_sim_group
-from spiking_networks.model3_delta import run_simulation
+from spiking_networks.model2 import run_simulation
 
-w_ee = 40 # EPSP (microV)
+
+ei_ratio = 8  # ratio of excitatory to inhibitory neurons
 
 if __name__ == '__main__':
 
+    # Set up group options
     group_options = {
         'output_dir': os.getcwd() + '/outputs/',
-        'group_label': 'figS2AB_w%.0f_' % w_ee + time.strftime("%Y%m%d_%H%M%S"),
+        'group_label': f'figS3AB_' + 'r%d_' % ei_ratio + time.strftime("%Y%m%d_%H%M%S"),
         'output_plots': True,
     }
-
+    
+    n_b = int(20000 / ei_ratio)
+    p_jb = 0.01 * ei_ratio / 4    
+   
+    # Set up group parameters
     group_params = {
-        'n_stims': [1],
-        'p_rc': [0.00, 0.16],
-        'p_ff': [0.14, 0.04],
-        'syn_weight_pp': [(w_ee * 1e-3, mV)],
+        'p_rc': [0.00, 0.12],
+        'p_ff': [0.14, 0.07],
+        'n_b': [n_b],
+        'p_bb': [p_jb],
+        'p_pb': [p_jb],
+        'v_time': [19.6, 48.5]
     }
 
-    run_sim_group(group_options, group_params, run_simulation)
+    run_sim_group(group_options,
+                  group_params, 
+                  run_simulation)

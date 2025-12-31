@@ -1,8 +1,8 @@
 """
-figS3D.py
-Generates Figure S3, panel D.
+figS2D.py
+Generates Figure S2, panel D.
 
-Run as 'python figS3D.py plot' to plot results from a previous run.
+Run as 'python figS2D.py plot' to plot results from previous runs.
 """
 
 import time
