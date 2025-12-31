@@ -16,6 +16,10 @@ Each `fig*.py` script generates one or more figure panels. Command-line usage (i
 - `fig4F.py`: Generates Figure 4, panel F.
 - `figS2AB.py`: Generates Figure S2, panels A and B.
 - `figS2C.py`: Generates Figure S2, panel C[^1][^2]. Also supports plot-only via `python figS2C.py plot`.
+- `figS2D.py`: Generates Figure S2, panel D. Also supports plot-only via `python figS2D.py plot`.
+- `figS3AB.py`: Generates Figure S3, panels A and B.
+- `figS3C.py`: Generates Figure S3, panel C[^1][^2]. Also supports plot-only via `python figS3C.py plot`.
+
 
 Outputs are written to the `outputs/` directory with timestamped subfolders created per run.
 
@@ -35,6 +39,9 @@ replay-conditions/
 ├─ fig4F.py
 ├─ figS2AB.py
 ├─ figS2C.py
+├─ figS2D.py
+├─ figS3AB.py
+├─ figS3C.py
 ├─ general_code/
 │  ├─ aux_functions.py
 │  ├─ group_simulations.py
