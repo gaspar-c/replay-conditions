@@ -10,15 +10,18 @@ import os
 import sys
 import glob
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from brian2 import nS, second
 from scipy.optimize import curve_fit
 from general_code.group_simulations import run_sim_group
 from spiking_networks.model2 import run_simulation
 
+mpl.rcParams['font.family'] = 'sans-serif'
+mpl.rcParams['font.sans-serif'] = ['Arial']
 
 ei_ratio = 8  # ratio of excitatory to inhibitory neurons
-scale = 'g_sqrt'   # scaling method for inhibitory synapses
+scale = 'p'   # scaling method for inhibitory synapses
 stdp_time = 300 # duration of STDP training in seconds
 
 
@@ -79,15 +82,20 @@ def plot_results():
     """
 
     output_root = os.path.join(os.getcwd(), 'outputs')
-    base_pattern = f'figS3D_r*_s{scale}_STDP{stdp_time}s_*'
-    candidate_dirs = sorted(glob.glob(os.path.join(output_root, base_pattern)))
-
-    if not candidate_dirs:
-        print(f"No output directories matching {base_pattern} found under outputs/")
-        return
-
+    
     # Map ei_ratio -> list of dirs, pick latest per ratio
     ratio_to_dir = {}
+    
+    # For r4, match only stdp_time (any scale)
+    r4_pattern = f'figS3D_r4_s*_STDP{stdp_time}s_*'
+    r4_dirs = sorted(glob.glob(os.path.join(output_root, r4_pattern)))
+    if r4_dirs:
+        ratio_to_dir[4] = r4_dirs
+    
+    # For r2 and r8, match both scale and stdp_time
+    base_pattern = f'figS3D_r*_s{scale}_STDP{stdp_time}s_*'
+    candidate_dirs = sorted(glob.glob(os.path.join(output_root, base_pattern)))
+    
     for d in candidate_dirs:
         try:
             name_part = os.path.basename(d)
@@ -95,6 +103,9 @@ def plot_results():
             if ratio_str.startswith('r'):
                 ei_val = int(ratio_str[1:])
             else:
+                continue
+            # Skip r4 since we already added it above
+            if ei_val == 4:
                 continue
             if ei_val not in ratio_to_dir:
                 ratio_to_dir[ei_val] = []
@@ -106,30 +117,20 @@ def plot_results():
     for r in sorted(ratio_to_dir.keys()):
         print(f"  r{r}: {len(ratio_to_dir[r])} runs")
 
-    user_input = input("Enter three ei_ratio values (comma-separated, e.g., 2,4,8): ").strip()
-    if not user_input:
-        print("No ei_ratio values provided; aborting plot.")
-        return
-
-    try:
-        selected_ratios = [int(v) for v in user_input.split(',') if v.strip()]
-    except ValueError:
-        print("Invalid input; please enter integers like 2,4,8")
-        return
-
-    if len(selected_ratios) != 3:
-        print("Please provide exactly three ei_ratio values.")
-        return
+    # Use fixed ratios in the order 4, 2, 8
+    selected_ratios = [4, 2, 8]
 
     selected_dirs = []
     for ratio in selected_ratios:
         if ratio not in ratio_to_dir:
-            print(f"No runs found for ei_ratio={ratio} with scale={scale} and stdp_time={stdp_time}s")
+            if ratio == 4:
+                print(f"No runs found for ei_ratio={ratio} with stdp_time={stdp_time}s (any scale)")
+            else:
+                print(f"No runs found for ei_ratio={ratio} with scale={scale} and stdp_time={stdp_time}s")
             return
         dir_list = sorted(ratio_to_dir[ratio], key=os.path.getmtime, reverse=True)
-        if len(dir_list) == 1:
-            chosen_dir = dir_list[0]
-        else:
+        # Only prompt if there are more than one run for this ratio
+        if len(dir_list) > 1:
             print(f"\nMultiple runs found for r{ratio} (newest first):")
             for i, d in enumerate(dir_list):
                 print(f"  [{i}] {d}")
@@ -146,6 +147,8 @@ def plot_results():
                 except ValueError:
                     print("Invalid index; aborting.")
                     return
+        else:
+            chosen_dir = dir_list[0]
         selected_dirs.append((ratio, chosen_dir))
 
     print("\nUsing directories:")
@@ -163,13 +166,61 @@ def plot_results():
         print("No common v_snapshot files across the selected runs.")
         return
 
-    print(f"\nFound {len(common_files)} shared v_snapshot files; generating overlays...")
+    # Group files by sim number (sim1, sim2, etc.) and other identifiers
+    # Files are like: sim1_v10_300.000s_value.txt, sim2_v10_300.000s_value.txt, etc.
+    sim_groups = {}
+    for basename in common_files:
+        # Extract sim number if present
+        if basename.startswith('sim'):
+            parts = basename.split('_', 1)
+            sim_num = parts[0]  # e.g., 'sim1', 'sim2'
+            if len(parts) > 1:
+                rest = parts[1]  # e.g., 'v10_300.000s_value.txt'
+            else:
+                rest = basename
+        else:
+            sim_num = 'other'
+            rest = basename
+        
+        if sim_num not in sim_groups:
+            sim_groups[sim_num] = []
+        sim_groups[sim_num].append(basename)
+    
+    # If multiple sim groups found, prompt user
+    sim_keys = sorted(sim_groups.keys())
+    if len(sim_keys) > 1:
+        print(f"\nMultiple simulation groups found:")
+        for i, sim_key in enumerate(sim_keys):
+            print(f"  [{i}] {sim_key} ({len(sim_groups[sim_key])} files)")
+        sel = input("Select simulation group to plot (blank for all): ").strip()
+        if sel == "":
+            files_to_plot = common_files
+        else:
+            try:
+                idx = int(sel)
+                if idx < 0 or idx >= len(sim_keys):
+                    print("Index out of range; aborting.")
+                    return
+                files_to_plot = sim_groups[sim_keys[idx]]
+            except ValueError:
+                print("Invalid index; aborting.")
+                return
+    else:
+        files_to_plot = common_files
+
+    print(f"\nFound {len(files_to_plot)} v_snapshot files to plot; generating overlays...")
 
     bins = np.linspace(-60, -50, 41)
     colors = ['#3d3d3dff', '#2382f9fb', '#d53529ff']
 
-    for basename in sorted(common_files):
-        plt.figure(figsize=(3.0, 2.4))
+    for basename in sorted(files_to_plot):
+        fig, ax = plt.subplots(figsize=(1.4, 1.5))
+        font_size = 6.64
+        
+        # Set transparent backgrounds
+        fig.patch.set_alpha(0)
+        ax.patch.set_alpha(0)
+        
         bin_centers = (bins[:-1] + bins[1:]) / 2
         max_y = 0
 
@@ -195,27 +246,49 @@ def plot_results():
             except Exception:
                 pass
 
-            plt.bar(bins[:-1], counts, width=np.diff(bins), align='edge',
-                    color=colors[idx], alpha=0.30, label=f'r{ratio} hist')
+            ax.bar(bins[:-1], counts, width=np.diff(bins), align='edge',
+                    color=colors[idx], alpha=0.30)
 
             if gauss_params is not None:
                 x_vals = np.linspace(bins[0], bins[-1], 200)
-                plt.plot(x_vals, gaussian(x_vals, *gauss_params),
-                         color=colors[idx], lw=2, label=f'r{ratio} fit (R²={gauss_r2:.2f})')
+                ax.plot(x_vals, gaussian(x_vals, *gauss_params),
+                         color=colors[idx], lw=2, label=f'{ratio}:1')
 
-        plt.axvline(-50, color='black', lw=1.2, ls='--')
-        plt.xlim([-61, -49.5])
-        plt.ylim([0, max_y * 1.15 if max_y > 0 else 1])
-        plt.xticks([-60, -55, -50], ['-60', '', '-50'])
-        plt.xlabel(r'$v$ (mV)', fontsize=9)
-        plt.ylabel('count', fontsize=9)
-        plt.legend(fontsize=8, frameon=False)
+        for spine in ['top', 'right', 'left']:
+            ax.spines[spine].set_visible(False)
+        
+        # ax.axvline(-50, color='black', lw=1.2, ls='-')
+        ax.set_xlim([-56, -50])
+        ax.set_xticks([-55, -50])
+        ax.set_xticklabels(['-55 mV', '-50'], fontsize=font_size)
+        # ax.set_xlabel(r'$v$ (mV)', fontsize=font_size)
+        
+        # Set bottom spine thickness
+        ax.spines['bottom'].set_linewidth(.676)
+        # Set x tick thickness
+        ax.tick_params(axis='x', width=.676, length=4, direction='inout')
+
+        
+        ax.set_ylim([0, 175])
+        ax.set_yticks([])  # Remove y-axis ticks
+        
+        # Add scale bar for y-axis (size 100)
+        scale_bar_x = -55.8  # Position on x-axis
+        scale_bar_y_start = 10  # Starting position on y-axis
+        scale_bar_height = 100  # Height of scale bar
+        ax.plot([scale_bar_x, scale_bar_x], 
+                [scale_bar_y_start, scale_bar_y_start + scale_bar_height], 
+                'k-', lw=0.676)
+        ax.text(scale_bar_x - 0.2, scale_bar_y_start + scale_bar_height/2, 
+                '100', fontsize=font_size, ha='right', va='center')
+        
+        # ax.legend(fontsize=font_size, frameon=False)
         plt.tight_layout()
 
         overlay_name = basename.replace('_value.txt', '')
         save_base = os.path.join(output_root, f'figS3D_s{scale}_STDP{stdp_time}s_{overlay_name}_r{selected_ratios[0]}_r{selected_ratios[1]}_r{selected_ratios[2]}')
-        plt.savefig(save_base + '.png', dpi=300, bbox_inches='tight')
-        plt.savefig(save_base + '.svg', bbox_inches='tight')
+        plt.savefig(save_base + '.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.savefig(save_base + '.svg', bbox_inches='tight', transparent=True)
         plt.close()
         print(f"  Saved overlay for {basename} -> {save_base}.png")
 
