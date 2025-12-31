@@ -493,7 +493,7 @@ class TestReplay:
         replay_file.close()
 
 
-def fit_v_snapshot(v_snapshot, fig_name, log=None):
+def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
     """
     Plot voltage snapshot histogram with Gaussian fit.
     
@@ -563,12 +563,13 @@ def fit_v_snapshot(v_snapshot, fig_name, log=None):
     max_plot = -49.8
     
     if fit_gauss and gauss_r2 > 0.5:
-        fig.text(0.92, 0.90, r'Gauss $R^2$ = %.2f' % gauss_r2, fontsize=font_size, va='top')
-        fig.text(0.92, 0.83, r'- $\mu$ = %.2f mV' % gauss_mean, fontsize=font_size, va='top')
-        fig.text(0.92, 0.76, r'- $\sigma$ = %.2f mV' % gauss_std, fontsize=font_size, va='top')
-        fig.text(0.92, 0.69, r'- $U$ = %.2f mV' % gauss_u, fontsize=font_size, va='top')
-        fig.text(0.92, 0.62, r'- $x_0$ = %.2f mV' % gauss_x0, fontsize=font_size, va='top')
-        fig.text(0.92, 0.55, r'- $U - x_0$ = %.2f mV' % (gauss_u - gauss_x0), fontsize=font_size, va='top')
+        if annotate:
+            fig.text(0.92, 0.90, r'Gauss $R^2$ = %.2f' % gauss_r2, fontsize=font_size, va='top')
+            fig.text(0.92, 0.83, r'- $\mu$ = %.2f mV' % gauss_mean, fontsize=font_size, va='top')
+            fig.text(0.92, 0.76, r'- $\sigma$ = %.2f mV' % gauss_std, fontsize=font_size, va='top')
+            fig.text(0.92, 0.69, r'- $U$ = %.2f mV' % gauss_u, fontsize=font_size, va='top')
+            fig.text(0.92, 0.62, r'- $x_0$ = %.2f mV' % gauss_x0, fontsize=font_size, va='top')
+            fig.text(0.92, 0.55, r'- $U - x_0$ = %.2f mV' % (gauss_u - gauss_x0), fontsize=font_size, va='top')
         ax.plot(x_values, gaussian(x_values, *fit_gauss_params), color='black', lw=2)
         ax.plot(x_values, gaussian(x_values, *fit_gauss_params), color='darkgray', lw=1.5, alpha=0.95)
         ax.axvspan(gauss_mean - 2*gauss_std, gauss_mean + 2*gauss_std, 
