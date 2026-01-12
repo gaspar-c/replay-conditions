@@ -580,15 +580,15 @@ class PlotV:
             v_time, v_val = trim_brian_monitor_group(network[stm_name], network[stm_name].v, mV,
                                                         test_range[0], test_range[1])
             # bound low values of v for density plots
-            v_val[v_val < e_rest] = e_rest
+            v_val[v_val < v_reset] = v_reset
             monitors += [[v_time, v_val]]
             subplot_group.add_subplot(stm_name, monitors, 'density',
                                         [self.pop.plot_color], plot_params)
 
         for subplot_obj in subplot_group.subplots:
-            subplot_obj.fix_y_axis([e_rest - np.abs(e_rest - v_thres) * 0.05, v_thres],
+            subplot_obj.fix_y_axis([v_reset - np.abs(v_reset - v_thres) * 0.05, v_thres],
                                    [v_reset, v_thres],
-                                   ticklabels=['-60', '-50'])  # for detault parameters
+                                   ticklabels=[f'{v_reset:.0f}', f'{v_thres:.0f}'])  # for default parameters
 
         return subplot_group
 

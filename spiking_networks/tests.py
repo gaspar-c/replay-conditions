@@ -125,7 +125,7 @@ class NetworkTests:
                         str(options['sim_idx']) + '_[%.3f-%.3f]s' %
                         (test_range[0] / second, test_range[1] / second))
             fig_to_save.savefig(fig_name + '.png', dpi=300, bbox_inches='tight')
-            fig_to_save.savefig(fig_name + '.svg', dpi=600, bbox_inches='tight')
+            # fig_to_save.savefig(fig_name + '.svg', dpi=600, bbox_inches='tight')
             plt.close(fig_to_save)
 
 
@@ -493,7 +493,7 @@ class TestReplay:
         replay_file.close()
 
 
-def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
+def fit_v_snapshot(v_snapshot, fig_name, v_thres=-50, v_reset=-60, log=None, annotate=True):
     """
     Plot voltage snapshot histogram with Gaussian fit.
     
@@ -512,7 +512,7 @@ def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
         return amp * np.exp(-(x - cen) ** 2 / (2 * wid ** 2))
     
     # Create histogram
-    counts, bin_edges = np.histogram(v_snapshot, bins=np.linspace(-60, -50, 41), density=False)
+    counts, bin_edges = np.histogram(v_snapshot, bins=np.linspace(v_reset, v_thres, 41), density=False)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     
     # Calculate basic statistics
@@ -560,7 +560,7 @@ def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
     
     v_range = max(v_snapshot) - min(v_snapshot)
     x_values = np.linspace(min(bin_centers) - v_range * 0.05, max(bin_centers) + v_range * 0.05, 100)
-    max_plot = -49.8
+    max_plot = v_thres + 0.2
     
     if fit_gauss and gauss_r2 > 0.5:
         if annotate:
@@ -577,10 +577,10 @@ def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
         if gauss_mean + 2*gauss_std > max_plot:
             max_plot = gauss_mean + 2*gauss_std + 0.2
     
-    ax.set_xlim([-61, max_plot])
+    ax.set_xlim([v_reset, max_plot])
     ax.set_ylim([0, 150])
-    ax.axvline(-50, color='black', lw=1.5, ls='--')
-    ax.set_xticks([-60, -55, -50], labels=['-60', '', '-50'], fontsize=font_size)
+    ax.axvline(v_thres, color='black', lw=1.5, ls='--')
+    ax.set_xticks([v_reset, (v_reset + v_thres) / 2, v_thres], labels=[f'{v_reset:.0f}', '', f'{v_thres:.0f}'], fontsize=font_size)
     ax.set_xlabel(r'$v$ (mV)', fontsize=font_size)
     ax.set_ylabel('count', fontsize=font_size)
     
@@ -590,7 +590,7 @@ def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
     
     # Save plot
     fig.savefig(fig_name + '.png', dpi=300, bbox_inches='tight')
-    fig.savefig(fig_name + '.svg', bbox_inches='tight')
+    # fig.savefig(fig_name + '.svg', bbox_inches='tight')
     plt.close(fig)
     
     return {
@@ -647,9 +647,11 @@ class TestFitV:
                     for param_name in group_params:
                         param_vals += sim_params[param_name].get_str() + ' \t '
 
+                    v_thres = sim_params['v_thres'].get_param() / mV
+                    v_reset = sim_params['v_reset'].get_param() / mV
                     time_arg = np.argmin(np.abs(network[stm_name].t - time_i))
                     v_snapshot = np.array(network[stm_name].v[:, time_arg] / mV)
-                    counts, bin_edges = np.histogram(v_snapshot, bins=np.linspace(-60, -50, 41), density=False)
+                    counts, bin_edges = np.histogram(v_snapshot, bins=np.linspace(v_reset, v_thres, 41), density=False)
                     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
                     gauss_mean = np.nan
@@ -666,7 +668,7 @@ class TestFitV:
                     np.savetxt(fig_name + '_value.txt', v_snapshot)
                     
                     # Plot using shared function
-                    fit_params = fit_v_snapshot(v_snapshot, fig_name, log)
+                    fit_params = fit_v_snapshot(v_snapshot, fig_name, v_thres=v_thres, v_reset=v_reset, log=log)
                     gauss_mean = fit_params['gauss_mean']
                     gauss_std = fit_params['gauss_std']
                     gauss_u = fit_params['gauss_u']

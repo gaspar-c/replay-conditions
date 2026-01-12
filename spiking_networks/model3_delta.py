@@ -7,7 +7,7 @@ from brian2 import Network, Hz, mV, nS, ms, second, pF, pA
 from general_code.aux_functions import xprint
 from spiking_networks.simulations import SimElement, run_network_sim
 from general_code.parameters import Parameter, initialize_params
-from spiking_networks.tests import NetworkTests, TestReplay
+from spiking_networks.tests import NetworkTests, TestReplay, TestFitV
 from spiking_networks.network import TriggerSpikes
 from spiking_networks.plot_spiking_trace import PlotRaster, PlotPopRate, PlotV
 from spiking_networks import network as net, synapses as syn, connectivities as conn
@@ -35,7 +35,10 @@ def run_simulation(options):
                   'conn_fixed': Parameter(False),
                   'mem_cap': Parameter(200, pF),
                   'g_leak': Parameter(10, nS),
-                  'curr_bg': Parameter(58, pA)
+                  'curr_bg': Parameter(58, pA),
+                  'e_rest': Parameter(-60, mV),
+                  'v_reset': Parameter(-60, mV),
+                  'v_thres': Parameter(-50, mV),
     }
 
     log, sim_params, plot_params = initialize_params(options, sim_params)
@@ -54,9 +57,9 @@ def run_simulation(options):
     # Create standard LIF neuron model
     std_lif = net.LIFModel(mem_cap=sim_params['mem_cap'],
                            g_leak=sim_params['g_leak'],
-                           e_rest=Parameter(-60, mV),
-                           v_reset=Parameter(-60, mV),
-                           v_thres=Parameter(-50, mV),
+                           e_rest=sim_params['e_rest'],
+                           v_reset=sim_params['v_reset'],
+                           v_thres=sim_params['v_thres'],
                            tau_refr=sim_params['tau_ref'],
                            curr_bg=sim_params['curr_bg'])
 
@@ -118,6 +121,26 @@ def run_simulation(options):
 
     # Set up replay test events
     wait_time = 1 * second
+
+    
+    # Test AI state
+    test_ai = sim_params['test_ai'].get_param()
+    if test_ai:
+        events.append(NetworkTests(monitors=monitors,
+                                    start=wait_time - 80 * ms, stop=wait_time,
+                                    max_record=sim_params['max_record'].get_param(),
+                                    test_list=[
+                                        TestFitV(pops=[pop_p_sett], asb=[10], time=[wait_time]),
+                                    ],
+                                    plot_list=[
+                                        PlotRaster(pops=[pop_p_sett]),
+                                        PlotPopRate(pops=[pop_p_sett], y_max=[10]),
+                                        PlotV(pop=pop_p_sett, asb=[10],
+                                                title=r'Last Assembly $v$ (mV)'),
+                                        ],
+                                    time_bar=20 * ms
+                                    ))
+        
     inter_stim_time = 1 * second
     n_stims = sim_params['n_stims'].get_param()
     for stim_idx in range(n_stims):

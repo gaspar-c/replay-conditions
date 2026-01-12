@@ -120,7 +120,7 @@ def run_simulation(options):
 
     events = []
     monitors = []
-
+        
     # Set up replay test events
     wait_time = 1 * second
     inter_stim_time = 1 * second
