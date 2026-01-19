@@ -1,7 +1,5 @@
 # Replay Conditions — Figure Scripts
 
-This repository provides scripts to reproduce figures from Cano, G. and Kempter, R. (2025). Conditions for replay of neuronal assemblies. bioRxiv. doi: https://doi.org/10.1101/2025.07.08.663644. 
-
 Each `fig*.py` script generates one or more figure panels. Command-line usage (including optional arguments) is documented in each script's header.
 
 ## Quick Reference
