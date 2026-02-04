@@ -1,0 +1,12 @@
+name: replay-conditions
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.8.18
+  - numpy=1.23.5
+  - scipy=1.10.1
+  - matplotlib=3.5.3
+  - pandas=1.4.2
+  - brian2=2.4.2
+  - pip=23.2.1
