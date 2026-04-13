@@ -20,7 +20,7 @@ Scripts that support both steps accept `sim` or `plot` as the first argument; `s
 
 When `sbatch` is available, `sim` automatically submits a Slurm job array instead of running locally and exits immediately. The generated `job.sh` and per-job logs (`slurm_<jobid>_<taskid>.log`) are written into the output subfolder.
 
-Default Slurm settings are `partition=short`, `time=02:00:00`, `mem=8G`, `cpus-per-task=1`. To override, add a `slurm` key to `group_options` inside `sim_model()`:
+Default Slurm settings are `partition=short`, `mem=8G`, `cpus-per-task=1`. To override, add a `slurm` key to `group_options` inside `sim_model()`:
 
 ```python
 group_options['slurm'] = {'partition': 'normal', 'time': '08:00:00', 'mem': '16G'}

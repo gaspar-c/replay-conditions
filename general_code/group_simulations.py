@@ -17,7 +17,6 @@ from general_code.aux_functions import xprint, seconds_to_hhmmss
 
 _SLURM_DEFAULTS = {
     'partition': 'short',
-    'time': '02:00:00',
     'mem': '8G',
     'cpus_per_task': 1,
 }
@@ -46,8 +45,8 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
         "#!/bin/bash\n"
         f"#SBATCH --job-name={group_options['group_label']}\n"
         f"#SBATCH --partition={slurm_opts['partition']}\n"
-        f"#SBATCH --time={slurm_opts['time']}\n"
-        f"#SBATCH --mem={slurm_opts['mem']}\n"
+        + (f"#SBATCH --time={slurm_opts['time']}\n" if 'time' in slurm_opts else "")
+        + f"#SBATCH --mem={slurm_opts['mem']}\n"
         f"#SBATCH --cpus-per-task={slurm_opts['cpus_per_task']}\n"
         f"#SBATCH --array=1-{n_sims}\n"
         f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
@@ -64,7 +63,6 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
     if result.returncode == 0:
         job_id = result.stdout.strip()
         xprint(f'Submitted {n_sims} jobs to Slurm ({job_id}). Script: {script_path}', group_log)
-        xprint(f'When done, plot results with: python {os.path.basename(sys.argv[0])} plot', group_log)
     else:
         xprint(f'sbatch failed: {result.stderr}', group_log)
         raise RuntimeError(f'sbatch submission failed:\n{result.stderr}')
