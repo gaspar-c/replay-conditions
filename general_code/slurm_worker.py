@@ -11,6 +11,20 @@ import pickle
 import importlib
 
 
+def _set_brian2_cache_dir():
+    """Point Brian2's Cython cache at the pre-compiled shared cache (if available),
+    otherwise a node-local directory to avoid NFS contention during compilation."""
+    import brian2
+    cache_dir = os.environ.get('BRIAN2_CACHE_DIR')
+    if cache_dir is None:
+        tmpdir   = os.environ.get('TMPDIR', '/tmp')
+        job_id   = os.environ.get('SLURM_ARRAY_JOB_ID', os.environ.get('SLURM_JOB_ID', 'nojob'))
+        task_id  = os.environ.get('SLURM_ARRAY_TASK_ID', '0')
+        cache_dir = os.path.join(tmpdir, f'brian_cache_{job_id}_{task_id}')
+    os.makedirs(cache_dir, exist_ok=True)
+    brian2.prefs.codegen.runtime.cython.cache_dir = cache_dir
+
+
 def main():
     if len(sys.argv) < 4:
         print("Usage: python -m general_code.slurm_worker <params_pkl> <module_path> <func_name>")
@@ -19,6 +33,8 @@ def main():
     params_pkl  = sys.argv[1]
     module_path = sys.argv[2]
     func_name   = sys.argv[3]
+
+    _set_brian2_cache_dir()
 
     slurm_task_id = os.environ.get('SLURM_ARRAY_TASK_ID')
     if slurm_task_id is None:

@@ -23,8 +23,15 @@ _SLURM_DEFAULTS = {
 
 
 def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_log):
-    """Serialize params, write an sbatch script, and submit a Slurm job array."""
-    out_dir = group_options['output_dir'] + group_options['group_label']
+    """Serialize params, write sbatch scripts, and submit a Slurm job array.
+
+    Submission is two-step to avoid per-job Brian2 Cython recompilation:
+      1. A warmup job (sim 1) compiles Brian2 into a shared cache dir and runs sim 1.
+      2. The main array (sims 2..n_sims) starts after the warmup completes, with
+         BRIAN2_CACHE_DIR pointing at the pre-compiled cache.
+    """
+    out_dir   = group_options['output_dir'] + group_options['group_label']
+    cache_dir = os.path.join(out_dir, 'brian_cache')
 
     # Serialize params for workers
     pkl_path = os.path.join(out_dir, 'slurm_params.pkl')
@@ -41,31 +48,63 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
     work_dir    = os.getcwd()
     log_dir     = out_dir
 
-    script = (
-        "#!/bin/bash\n"
-        f"#SBATCH --job-name={group_options['group_label']}\n"
+    time_line     = f"#SBATCH --time={slurm_opts['time']}\n" if 'time' in slurm_opts else ""
+    slurm_header  = (
         f"#SBATCH --partition={slurm_opts['partition']}\n"
-        + (f"#SBATCH --time={slurm_opts['time']}\n" if 'time' in slurm_opts else "")
+        + time_line
         + f"#SBATCH --mem={slurm_opts['mem']}\n"
         f"#SBATCH --cpus-per-task={slurm_opts['cpus_per_task']}\n"
-        f"#SBATCH --array=1-{n_sims}\n"
-        f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
-        "\n"
-        f"cd {work_dir}\n"
-        f"{python_exe} -m general_code.slurm_worker {pkl_path} {module_path} {func_name}\n"
     )
+    worker_cmd = f"{python_exe} -m general_code.slurm_worker {pkl_path} {module_path} {func_name}"
 
-    script_path = os.path.join(out_dir, 'job.sh')
-    with open(script_path, 'w') as f:
-        f.write(script)
+    # --- warmup script: runs sim 1 and populates the shared Brian2 cache ---
+    warmup_script = (
+        "#!/bin/bash\n"
+        f"#SBATCH --job-name={group_options['group_label']}_warmup\n"
+        + slurm_header
+        + f"#SBATCH --output={log_dir}/slurm_warmup.log\n"
+        "\n"
+        f"export BRIAN2_CACHE_DIR={cache_dir}\n"
+        f"export SLURM_ARRAY_TASK_ID=1\n"
+        f"cd {work_dir}\n"
+        f"{worker_cmd}\n"
+    )
+    warmup_path = os.path.join(out_dir, 'job_warmup.sh')
+    with open(warmup_path, 'w') as f:
+        f.write(warmup_script)
 
-    result = subprocess.run(['sbatch', script_path], capture_output=True, text=True)
-    if result.returncode == 0:
-        job_id = result.stdout.strip()
-        xprint(f'Submitted {n_sims} jobs to Slurm ({job_id}). Script: {script_path}', group_log)
+    warmup_result = subprocess.run(['sbatch', warmup_path], capture_output=True, text=True)
+    if warmup_result.returncode != 0:
+        xprint(f'sbatch warmup failed: {warmup_result.stderr}', group_log)
+        raise RuntimeError(f'sbatch warmup submission failed:\n{warmup_result.stderr}')
+    warmup_job_id = warmup_result.stdout.strip().split()[-1]
+    xprint(f'Submitted warmup job {warmup_job_id} (sim 1). Script: {warmup_path}', group_log)
+
+    # --- main array: sims 2..n_sims, starts only after warmup succeeds ---
+    array_script = (
+        "#!/bin/bash\n"
+        f"#SBATCH --job-name={group_options['group_label']}\n"
+        + slurm_header
+        + f"#SBATCH --array=2-{n_sims}\n"
+        f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
+        f"#SBATCH --dependency=afterok:{warmup_job_id}\n"
+        "\n"
+        f"export BRIAN2_CACHE_DIR={cache_dir}\n"
+        f"cd {work_dir}\n"
+        f"{worker_cmd}\n"
+    )
+    array_path = os.path.join(out_dir, 'job.sh')
+    with open(array_path, 'w') as f:
+        f.write(array_script)
+
+    array_result = subprocess.run(['sbatch', array_path], capture_output=True, text=True)
+    if array_result.returncode == 0:
+        array_job_id = array_result.stdout.strip()
+        xprint(f'Submitted {n_sims - 1} array jobs to Slurm ({array_job_id}), '
+               f'pending warmup {warmup_job_id}. Script: {array_path}', group_log)
     else:
-        xprint(f'sbatch failed: {result.stderr}', group_log)
-        raise RuntimeError(f'sbatch submission failed:\n{result.stderr}')
+        xprint(f'sbatch array failed: {array_result.stderr}', group_log)
+        raise RuntimeError(f'sbatch array submission failed:\n{array_result.stderr}')
 
 
 def param_array_str(param_array):

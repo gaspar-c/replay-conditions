@@ -29,14 +29,20 @@ def get_replay_pivot(group_path, qual_thres=0.8, act_low_thres=0.9, act_up_thres
     Returns:
         pd.DataFrame: Pivoted group statistics.
     """
-    # Read test results and create DataFrame
-    file_path = group_path + '/0_group_replay.txt'
-    file = open(file_path, 'r')
-    data = []
-    for line in file.readlines():
-        data.append(line.replace('\n', '').split(' \t '))
-    file.close()
-    df = pd.DataFrame(data=data[1:], columns=data[0])
+    # Read per-simulation result files and concatenate
+    import glob
+    sim_files = sorted(glob.glob(group_path + '/sim*_replay.txt'))
+    header = None
+    rows = []
+    for sim_file in sim_files:
+        with open(sim_file) as f:
+            lines = [l for l in f.readlines() if l.strip()]
+        if len(lines) < 2:
+            continue
+        if header is None:
+            header = lines[0].replace('\n', '').split(' \t ')
+        rows.append(lines[1].replace('\n', '').split(' \t '))
+    df = pd.DataFrame(data=rows, columns=header)
 
     # Convert columns from string to appropriate types
     df['p_ff'] = float_from_str(df['p_ff'])

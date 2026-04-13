@@ -217,18 +217,10 @@ class TestReplay:
         options = settings.options
         group_params = options['group_param_overrides'].keys()
 
-        # create replay properties file
-        replay_file_path = options['output_dir'] + options['group_label'] + '/0_group_replay.txt'
-        if not os.path.exists(replay_file_path):
-            with open(replay_file_path, 'w') as replay_file:
-
-                replay_header = 'sim# \t '
-                for param_name in group_params:
-                    replay_header += param_name + ' \t '
-
-                replay_header += 'stim# \t replay \t asy_speed \t asy_act \t asy_width \t explosion'
-                replay_file.write(replay_header + '\n')
-                replay_file.close()
+        replay_header = 'sim# \t '
+        for param_name in group_params:
+            replay_header += param_name + ' \t '
+        replay_header += 'stim# \t replay \t asy_speed \t asy_act \t asy_width \t explosion'
 
         asb_size = self.pop.asb_size
 
@@ -488,9 +480,11 @@ class TestReplay:
                       (check_replay, replay_asy_speed * 1000, replay_asy_act,
                        replay_asy_width, check_explosion))
 
-        replay_file = open(options['output_dir'] + options['group_label'] + '/0_group_replay.txt', 'a')
-        replay_file.write(replay_str + '\n')
-        replay_file.close()
+        sim_replay_path = (options['output_dir'] + options['group_label'] +
+                           '/sim%d_replay.txt' % options['sim_idx'])
+        with open(sim_replay_path, 'w') as replay_file:
+            replay_file.write(replay_header + '\n')
+            replay_file.write(replay_str + '\n')
 
 
 def fit_v_snapshot(v_snapshot, fig_name, log=None, annotate=True):
