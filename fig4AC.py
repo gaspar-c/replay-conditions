@@ -48,7 +48,6 @@ def sim_model(model_name):
     }
 
     run_sim_group(group_options, group_params, run_simulation)
-    return os.path.join(os.getcwd(), 'outputs', group_label)
 
 
 def plot_results(group_path=None):
@@ -79,7 +78,6 @@ if __name__ == '__main__':
 
     if action == 'sim':
         model_name = get_model_shape()
-        group_path = sim_model(model_name)
-        plot_results(group_path)
+        sim_model(model_name)
     else:
         plot_results()

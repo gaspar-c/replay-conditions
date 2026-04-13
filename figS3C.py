@@ -52,8 +52,6 @@ def sim_model():
     }
 
     run_sim_group(group_options, group_params, run_simulation)
-    
-    return os.path.join(os.getcwd(), 'outputs', group_label)
 
 
 def plot_results(group_path=None):
@@ -83,7 +81,7 @@ def plot_results(group_path=None):
 
 
 if __name__ == '__main__':
-    # Parse command-line arguments: default is 'sim' (with auto-plot), explicit 'plot' runs only plot
+    # Default action is 'sim'. Use 'plot' to plot results from a previous run.
     if len(sys.argv) > 1:
         action = sys.argv[1].lower()
         if action not in ['sim', 'plot']:
@@ -93,7 +91,6 @@ if __name__ == '__main__':
         action = 'sim'  # Default action
 
     if action == 'sim':
-        group_path = sim_model()
-        plot_results(group_path)
+        sim_model()
     else:  # action == 'plot'
         plot_results()

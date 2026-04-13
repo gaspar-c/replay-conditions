@@ -50,11 +50,10 @@ def sim_model(model_num):
 
     # Dynamically import the model's run_simulation function
     run_sim_group(group_options,
-                  group_params, 
+                  group_params,
                   __import__(f'spiking_networks.model{model_num}',
                              fromlist=['run_simulation']
                             ).run_simulation)
-    return os.path.join(os.getcwd(), 'outputs', group_label)
 
 
 def plot_results(group_path=None):
@@ -92,7 +91,7 @@ def plot_results(group_path=None):
 
 
 if __name__ == '__main__':
-    # Default to 'sim' (auto-plot after). Explicit 'plot' runs plot-only.
+    # Default action is 'sim'. Use 'plot' to plot results from a previous run.
     if len(sys.argv) > 1:
         action = sys.argv[1].lower()
         if action not in ['sim', 'plot']:
@@ -113,8 +112,7 @@ if __name__ == '__main__':
                 sys.exit(1)
         else:
             model_num = get_model_number(valid_models=[1, 2, 3])
-        out_path = sim_model(model_num)
-        plot_results(out_path)
+        sim_model(model_num)
     else:  # action == 'plot'
         plot_results()
     

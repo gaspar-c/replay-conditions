@@ -7,9 +7,67 @@ import os
 import time
 import socket
 import sys
+import shutil
+import pickle
+import subprocess
 import multiprocessing as mltp
 from brian2 import clear_cache
 from general_code.aux_functions import xprint, seconds_to_hhmmss
+
+
+_SLURM_DEFAULTS = {
+    'partition': 'short',
+    'time': '02:00:00',
+    'mem': '8G',
+    'cpus_per_task': 1,
+}
+
+
+def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_log):
+    """Serialize params, write an sbatch script, and submit a Slurm job array."""
+    out_dir = group_options['output_dir'] + group_options['group_label']
+
+    # Serialize params for workers
+    pkl_path = os.path.join(out_dir, 'slurm_params.pkl')
+    with open(pkl_path, 'wb') as f:
+        pickle.dump({'group_options': group_options, 'group_params': group_params}, f)
+
+    # Slurm options: defaults, overridden by group_options['slurm'] if present
+    slurm_opts = dict(_SLURM_DEFAULTS)
+    slurm_opts.update(group_options.get('slurm', {}))
+
+    module_path = run_single.__module__
+    func_name   = run_single.__name__
+    python_exe  = sys.executable
+    work_dir    = os.getcwd()
+    log_dir     = out_dir
+
+    script = (
+        "#!/bin/bash\n"
+        f"#SBATCH --job-name={group_options['group_label']}\n"
+        f"#SBATCH --partition={slurm_opts['partition']}\n"
+        f"#SBATCH --time={slurm_opts['time']}\n"
+        f"#SBATCH --mem={slurm_opts['mem']}\n"
+        f"#SBATCH --cpus-per-task={slurm_opts['cpus_per_task']}\n"
+        f"#SBATCH --array=1-{n_sims}\n"
+        f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
+        "\n"
+        f"cd {work_dir}\n"
+        f"{python_exe} -m general_code.slurm_worker {pkl_path} {module_path} {func_name}\n"
+    )
+
+    script_path = os.path.join(out_dir, 'job.sh')
+    with open(script_path, 'w') as f:
+        f.write(script)
+
+    result = subprocess.run(['sbatch', script_path], capture_output=True, text=True)
+    if result.returncode == 0:
+        job_id = result.stdout.strip()
+        xprint(f'Submitted {n_sims} jobs to Slurm ({job_id}). Script: {script_path}', group_log)
+        xprint(f'When done, plot results with: python {os.path.basename(sys.argv[0])} plot', group_log)
+    else:
+        xprint(f'sbatch failed: {result.stderr}', group_log)
+        raise RuntimeError(f'sbatch submission failed:\n{result.stderr}')
 
 
 def param_array_str(param_array):
@@ -72,9 +130,17 @@ def choose_from_group_params(settings, group_params, sim_idx, n_cores):
 
 def run_sim_group(group_options, group_params, run_single):
     """
-    run group of simulations. This function distributes the specified
-    settings and parameters for the whole simulation group to each individual
-    simulation, running each of them in parallel (if several CPUs are available)
+    Run a group of simulations.
+
+    On systems with Slurm (sbatch available), submits a job array and returns
+    True immediately — simulations run asynchronously on the cluster.
+
+    On systems without Slurm, runs simulations locally in parallel using
+    multiprocessing and returns False.
+
+    To customise Slurm options (partition, time limit, memory), add a 'slurm'
+    key to group_options, e.g.:
+        group_options['slurm'] = {'partition': 'normal', 'time': '08:00:00', 'mem': '16G'}
     """
 
     """ CREATE SIMULATION GROUP OUTPUT FOLDER """
@@ -92,6 +158,11 @@ def run_sim_group(group_options, group_params, run_single):
     host_name = socket.gethostname()
     script_name = os.path.basename(sys.argv[0])
     xprint('Running %d simulations from %s in %s...' % (group_options['n_sims'], script_name, host_name), group_log)
+
+    """ USE SLURM IF AVAILABLE """
+    if shutil.which('sbatch') is not None:
+        _submit_slurm_array(group_options, group_params, run_single, n_sims, group_log)
+        return
 
     """ ATTRIBUTE SIM INDEX AND CPU CORE """
     n_sims = group_options['n_sims']
