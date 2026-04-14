@@ -41,7 +41,8 @@ def get_replay_pivot(group_path, qual_thres=0.8, act_low_thres=0.9, act_up_thres
             continue
         if header is None:
             header = lines[0].replace('\n', '').split(' \t ')
-        rows.append(lines[1].replace('\n', '').split(' \t '))
+        for line in lines[1:]:
+            rows.append(line.replace('\n', '').split(' \t '))
     df = pd.DataFrame(data=rows, columns=header)
 
     # Convert columns from string to appropriate types

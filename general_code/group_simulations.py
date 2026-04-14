@@ -18,6 +18,7 @@ _SLURM_DEFAULTS = {
     'partition': 'short',
     'mem': '8G',
     'cpus_per_task': 1,
+    'max_array_size': 1000,
 }
 
 
@@ -108,30 +109,42 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
     xprint(f'Submitted warmup job {warmup_job_id} (sim {warmup_idx}, first non-zero params). Script: {warmup_path}', group_log)
 
     # --- main array: all n_sims, starts only after warmup (compile-only) succeeds ---
-    array_script = (
-        "#!/bin/bash\n"
-        f"#SBATCH --job-name={group_options['group_label']}\n"
-        + slurm_header
-        + f"#SBATCH --array=1-{n_sims}\n"
-        f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
-        f"#SBATCH --dependency=afterok:{warmup_job_id}\n"
-        "\n"
-        f"export BRIAN2_CACHE_DIR={cache_dir}\n"
-        f"cd {work_dir}\n"
-        f"{worker_cmd}\n"
-    )
-    array_path = os.path.join(out_dir, 'job.sh')
-    with open(array_path, 'w') as f:
-        f.write(array_script)
+    # MaxArraySize limits the maximum task *ID*, not just the count.
+    # Each chunk uses --array=1-<chunk_size> and passes SIM_IDX_OFFSET so the
+    # worker can compute the true sim index: sim_idx = SLURM_ARRAY_TASK_ID + offset.
+    max_array_size = slurm_opts.get('max_array_size', 1000)
+    offsets = list(range(0, n_sims, max_array_size))
 
-    array_result = subprocess.run(['sbatch', array_path], capture_output=True, text=True)
-    if array_result.returncode == 0:
-        array_job_id = array_result.stdout.strip()
-        xprint(f'Submitted {n_sims} array jobs to Slurm ({array_job_id}), '
-               f'pending warmup {warmup_job_id}. Script: {array_path}', group_log)
-    else:
-        xprint(f'sbatch array failed: {array_result.stderr}', group_log)
-        raise RuntimeError(f'sbatch array submission failed:\n{array_result.stderr}')
+    for chunk_idx, offset in enumerate(offsets):
+        chunk_size = min(max_array_size, n_sims - offset)
+        array_path = os.path.join(out_dir, f'job_{chunk_idx}.sh')
+        array_script = (
+            "#!/bin/bash\n"
+            f"#SBATCH --job-name={group_options['group_label']}\n"
+            + slurm_header
+            + f"#SBATCH --array=1-{chunk_size}\n"
+            f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
+            f"#SBATCH --dependency=afterok:{warmup_job_id}\n"
+            "\n"
+            f"export BRIAN2_CACHE_DIR={cache_dir}\n"
+            f"export SIM_IDX_OFFSET={offset}\n"
+            f"cd {work_dir}\n"
+            f"{worker_cmd}\n"
+        )
+        with open(array_path, 'w') as f:
+            f.write(array_script)
+
+        array_result = subprocess.run(['sbatch', array_path], capture_output=True, text=True)
+        if array_result.returncode == 0:
+            array_job_id = array_result.stdout.strip()
+            sim_start = offset + 1
+            sim_end = offset + chunk_size
+            xprint(f'Submitted {chunk_size} array jobs to Slurm ({array_job_id}) '
+                   f'[sims {sim_start}-{sim_end}], pending warmup {warmup_job_id}. '
+                   f'Script: {array_path}', group_log)
+        else:
+            xprint(f'sbatch array failed: {array_result.stderr}', group_log)
+            raise RuntimeError(f'sbatch array submission failed:\n{array_result.stderr}')
 
 
 def param_array_str(param_array):

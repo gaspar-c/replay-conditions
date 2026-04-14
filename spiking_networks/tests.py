@@ -482,8 +482,10 @@ class TestReplay:
 
         sim_replay_path = (options['output_dir'] + options['group_label'] +
                            '/sim%d_replay.txt' % options['sim_idx'])
-        with open(sim_replay_path, 'w') as replay_file:
-            replay_file.write(replay_header + '\n')
+        file_exists = os.path.isfile(sim_replay_path)
+        with open(sim_replay_path, 'a') as replay_file:
+            if not file_exists:
+                replay_file.write(replay_header + '\n')
             replay_file.write(replay_str + '\n')
 
 

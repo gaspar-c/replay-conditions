@@ -44,6 +44,12 @@ def _set_brian2_cache_dir():
 
     brian2.prefs.codegen.runtime.cython.cache_dir = cache_dir
 
+    # Use a conservative target instead of -march=native so the compiled binary
+    # runs on any x86-64 node, not just the one that ran the warmup job.
+    portable_flags = ['-O2', '-march=x86-64', '-ffast-math']
+    brian2.prefs.codegen.cpp.extra_compile_args_gcc = portable_flags
+    brian2.prefs.codegen.cpp.extra_compile_args_msvc = ['/O2']
+
 
 def main():
     if len(sys.argv) < 4:
@@ -60,7 +66,8 @@ def main():
     if slurm_task_id is None:
         print("Error: SLURM_ARRAY_TASK_ID not set. This script must be run as a Slurm array job.")
         sys.exit(1)
-    sim_idx = int(slurm_task_id)
+    offset = int(os.environ.get('SIM_IDX_OFFSET', 0))
+    sim_idx = int(slurm_task_id) + offset
 
     with open(params_pkl, 'rb') as f:
         data = pickle.load(f)
