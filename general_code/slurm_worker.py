@@ -60,7 +60,8 @@ def main():
     module_path = sys.argv[2]
     func_name   = sys.argv[3]
 
-    _set_brian2_cache_dir()
+    if os.environ.get('BRIAN2_CACHE_DIR') is not None:
+        _set_brian2_cache_dir()
 
     slurm_task_id = os.environ.get('SLURM_ARRAY_TASK_ID')
     if slurm_task_id is None:

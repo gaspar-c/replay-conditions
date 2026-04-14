@@ -43,25 +43,22 @@ def _warmup_sim_idx(group_params, n_sims):
 def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_log):
     """Serialize params, write sbatch scripts, and submit a Slurm job array.
 
-    Submission is two-step to avoid per-job Brian2 Cython recompilation:
-      1. A warmup job (sim 1) compiles Brian2 into a shared cache dir and runs sim 1.
-      2. The main array (sims 2..n_sims) starts after the warmup completes, with
+    When uses_brian=True (default), submission is two-step to avoid per-job
+    Brian2 Cython recompilation:
+      1. A warmup job compiles Brian2 into a shared cache dir.
+      2. The main array starts after the warmup completes, with
          BRIAN2_CACHE_DIR pointing at the pre-compiled cache.
+    When uses_brian=False, the warmup and cache are skipped and all array
+    jobs start immediately.
     """
-    out_dir   = group_options['output_dir'] + group_options['group_label']
-    cache_dir = os.path.join(out_dir, 'brian_cache')
+    out_dir    = group_options['output_dir'] + group_options['group_label']
+    uses_brian = group_options.get('uses_brian', True)
+    cache_dir  = os.path.join(out_dir, 'brian_cache') if uses_brian else None
 
     # Serialize params for workers
     pkl_path = os.path.join(out_dir, 'slurm_params.pkl')
     with open(pkl_path, 'wb') as f:
         pickle.dump({'group_options': group_options, 'group_params': group_params}, f)
-
-    # Separate pickle for the warmup worker: same params but with compile_only=True
-    warmup_options = dict(group_options)
-    warmup_options['compile_only'] = True
-    warmup_pkl_path = os.path.join(out_dir, 'slurm_params_warmup.pkl')
-    with open(warmup_pkl_path, 'wb') as f:
-        pickle.dump({'group_options': warmup_options, 'group_params': group_params}, f)
 
     # Slurm options: defaults, overridden by group_options['slurm'] if present
     slurm_opts = dict(_SLURM_DEFAULTS)
@@ -80,40 +77,51 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
         + f"#SBATCH --mem={slurm_opts['mem']}\n"
         f"#SBATCH --cpus-per-task={slurm_opts['cpus_per_task']}\n"
     )
-    worker_cmd        = f"{python_exe} -m general_code.slurm_worker {pkl_path} {module_path} {func_name}"
-    warmup_worker_cmd = f"{python_exe} -m general_code.slurm_worker {warmup_pkl_path} {module_path} {func_name}"
+    worker_cmd = f"{python_exe} -m general_code.slurm_worker {pkl_path} {module_path} {func_name}"
 
-    # --- warmup script: compile-only run (t=0) to populate the shared Brian2 cache.
-    #     Exits in seconds so all n_sims array jobs can start in parallel right after. ---
-    warmup_idx = _warmup_sim_idx(group_params, n_sims)
-    warmup_script = (
-        "#!/bin/bash\n"
-        f"#SBATCH --job-name={group_options['group_label']}_warmup\n"
-        + slurm_header
-        + f"#SBATCH --output={log_dir}/slurm_warmup.log\n"
-        "\n"
-        f"export BRIAN2_CACHE_DIR={cache_dir}\n"
-        f"export SLURM_ARRAY_TASK_ID={warmup_idx}\n"
-        f"cd {work_dir}\n"
-        f"{warmup_worker_cmd}\n"
-    )
-    warmup_path = os.path.join(out_dir, 'job_warmup.sh')
-    with open(warmup_path, 'w') as f:
-        f.write(warmup_script)
+    warmup_job_id = None
+    if uses_brian:
+        # Separate pickle for the warmup worker: same params but with compile_only=True
+        warmup_options = dict(group_options)
+        warmup_options['compile_only'] = True
+        warmup_pkl_path = os.path.join(out_dir, 'slurm_params_warmup.pkl')
+        with open(warmup_pkl_path, 'wb') as f:
+            pickle.dump({'group_options': warmup_options, 'group_params': group_params}, f)
+        warmup_worker_cmd = f"{python_exe} -m general_code.slurm_worker {warmup_pkl_path} {module_path} {func_name}"
 
-    warmup_result = subprocess.run(['sbatch', warmup_path], capture_output=True, text=True)
-    if warmup_result.returncode != 0:
-        xprint(f'sbatch warmup failed: {warmup_result.stderr}', group_log)
-        raise RuntimeError(f'sbatch warmup submission failed:\n{warmup_result.stderr}')
-    warmup_job_id = warmup_result.stdout.strip().split()[-1]
-    xprint(f'Submitted warmup job {warmup_job_id} (sim {warmup_idx}, first non-zero params). Script: {warmup_path}', group_log)
+        # --- warmup script: compile-only run to populate the shared Brian2 cache.
+        #     Exits in seconds so all n_sims array jobs can start in parallel right after. ---
+        warmup_idx = _warmup_sim_idx(group_params, n_sims)
+        warmup_script = (
+            "#!/bin/bash\n"
+            f"#SBATCH --job-name={group_options['group_label']}_warmup\n"
+            + slurm_header
+            + f"#SBATCH --output={log_dir}/slurm_warmup.log\n"
+            "\n"
+            f"export BRIAN2_CACHE_DIR={cache_dir}\n"
+            f"export SLURM_ARRAY_TASK_ID={warmup_idx}\n"
+            f"cd {work_dir}\n"
+            f"{warmup_worker_cmd}\n"
+        )
+        warmup_path = os.path.join(out_dir, 'job_warmup.sh')
+        with open(warmup_path, 'w') as f:
+            f.write(warmup_script)
 
-    # --- main array: all n_sims, starts only after warmup (compile-only) succeeds ---
+        warmup_result = subprocess.run(['sbatch', warmup_path], capture_output=True, text=True)
+        if warmup_result.returncode != 0:
+            xprint(f'sbatch warmup failed: {warmup_result.stderr}', group_log)
+            raise RuntimeError(f'sbatch warmup submission failed:\n{warmup_result.stderr}')
+        warmup_job_id = warmup_result.stdout.strip().split()[-1]
+        xprint(f'Submitted warmup job {warmup_job_id} (sim {warmup_idx}, first non-zero params). Script: {warmup_path}', group_log)
+
+    # --- main array: all n_sims ---
     # MaxArraySize limits the maximum task *ID*, not just the count.
     # Each chunk uses --array=1-<chunk_size> and passes SIM_IDX_OFFSET so the
     # worker can compute the true sim index: sim_idx = SLURM_ARRAY_TASK_ID + offset.
     max_array_size = slurm_opts.get('max_array_size', 1000)
     offsets = list(range(0, n_sims, max_array_size))
+    dependency_line  = f"#SBATCH --dependency=afterok:{warmup_job_id}\n" if warmup_job_id else ""
+    brian_cache_line = f"export BRIAN2_CACHE_DIR={cache_dir}\n" if cache_dir else ""
 
     array_job_ids = []
     for chunk_idx, offset in enumerate(offsets):
@@ -125,10 +133,10 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
             + slurm_header
             + f"#SBATCH --array=1-{chunk_size}\n"
             f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
-            f"#SBATCH --dependency=afterok:{warmup_job_id}\n"
-            "\n"
-            f"export BRIAN2_CACHE_DIR={cache_dir}\n"
-            f"export SIM_IDX_OFFSET={offset}\n"
+            + dependency_line
+            + "\n"
+            + brian_cache_line
+            + f"export SIM_IDX_OFFSET={offset}\n"
             f"cd {work_dir}\n"
             f"{worker_cmd}\n"
         )
@@ -304,14 +312,16 @@ def run_sim_group(group_options, group_params, run_single):
     """ RUN SIMULATIONS """
     start_time = time.time()
 
-    # Run warmup sim first to populate the Brian2 Cython cache. All subsequent
-    # workers (serial or parallel) will read the pre-compiled cache instead of
-    # compiling from scratch, avoiding lock contention and stuck processes.
-    warmup_idx = _warmup_sim_idx(group_params, n_sims)
-    warmup_options = dict(group_options)
-    warmup_options['compile_only'] = True
-    xprint('Running compile-only warmup (sim %d) to populate Brian2 cache...' % warmup_idx, group_log)
-    run_single(choose_from_group_params(warmup_options, group_params, warmup_idx, n_cores))
+    uses_brian = group_options.get('uses_brian', True)
+    if uses_brian:
+        # Run warmup sim first to populate the Brian2 Cython cache. All subsequent
+        # workers (serial or parallel) will read the pre-compiled cache instead of
+        # compiling from scratch, avoiding lock contention and stuck processes.
+        warmup_idx = _warmup_sim_idx(group_params, n_sims)
+        warmup_options = dict(group_options)
+        warmup_options['compile_only'] = True
+        xprint('Running compile-only warmup (sim %d) to populate Brian2 cache...' % warmup_idx, group_log)
+        run_single(choose_from_group_params(warmup_options, group_params, warmup_idx, n_cores))
     all_idxs = list(range(1, n_sims + 1))
 
     if n_cores == 1:

@@ -36,7 +36,8 @@ def sim_model(model_name):
         'max_cores': 50,
         'output_dir': os.getcwd() + '/outputs/',
         'group_label': group_label,
-        'output_plots': False
+        'output_plots': False,
+        'uses_brian': False,
     }
 
     # 2D R-F simulations
