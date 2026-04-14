@@ -296,14 +296,14 @@ def plot_results():
 
 
 if __name__ == '__main__':
-    # Default to 'sim'. Explicit 'plot' runs plot-only.
     if len(sys.argv) > 1:
         action = sys.argv[1].lower()
         if action not in ['sim', 'plot']:
             print("Invalid action. Valid options: sim, plot")
             sys.exit(1)
     else:
-        action = 'sim'
+        print("Usage: python figS2D.py <sim|plot>")
+        sys.exit(1)
     
     if action == 'sim':
         out_path = sim_model()

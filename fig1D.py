@@ -91,14 +91,14 @@ def plot_results(group_path=None):
 
 
 if __name__ == '__main__':
-    # Default action is 'sim'. Use 'plot' to plot results from a previous run.
     if len(sys.argv) > 1:
         action = sys.argv[1].lower()
         if action not in ['sim', 'plot']:
             print("Invalid action. Valid options: sim, plot")
             sys.exit(1)
     else:
-        action = 'sim'
+        print("Usage: python fig1D.py <sim|plot>")
+        sys.exit(1)
 
     if action == 'sim':
         if len(sys.argv) >= 3:

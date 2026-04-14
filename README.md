@@ -14,7 +14,7 @@ python fig1D.py sim    # run simulations
 python fig1D.py plot   # plot results from the most recent run
 ```
 
-Scripts that support both steps accept `sim` or `plot` as the first argument; `sim` is the default if omitted.
+Scripts that support both steps require `sim` or `plot` as the first argument.
 
 ### Running on a Slurm cluster
 

@@ -67,14 +67,14 @@ def plot_results(group_path=None):
 
 
 if __name__ == '__main__':
-    # Default to 'sim'; explicit 'plot' runs plot-only with interactive selection
     if len(sys.argv) > 1:
         action = sys.argv[1].lower()
         if action not in ['sim', 'plot']:
             print("Invalid action. Valid options: sim, plot")
             sys.exit(1)
     else:
-        action = 'sim'
+        print("Usage: python fig4AC.py <sim|plot>")
+        sys.exit(1)
 
     if action == 'sim':
         model_name = get_model_shape()
