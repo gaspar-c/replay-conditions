@@ -115,6 +115,7 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
     max_array_size = slurm_opts.get('max_array_size', 1000)
     offsets = list(range(0, n_sims, max_array_size))
 
+    array_job_ids = []
     for chunk_idx, offset in enumerate(offsets):
         chunk_size = min(max_array_size, n_sims - offset)
         array_path = os.path.join(out_dir, f'job_{chunk_idx}.sh')
@@ -136,7 +137,8 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
 
         array_result = subprocess.run(['sbatch', array_path], capture_output=True, text=True)
         if array_result.returncode == 0:
-            array_job_id = array_result.stdout.strip()
+            array_job_id = array_result.stdout.strip().split()[-1]
+            array_job_ids.append(array_job_id)
             sim_start = offset + 1
             sim_end = offset + chunk_size
             xprint(f'Submitted {chunk_size} array jobs to Slurm ({array_job_id}) '
@@ -145,6 +147,32 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
         else:
             xprint(f'sbatch array failed: {array_result.stderr}', group_log)
             raise RuntimeError(f'sbatch array submission failed:\n{array_result.stderr}')
+
+    # --- finalizer job: queries sacct and writes per-task summary to the group log ---
+    dep_str      = ':'.join(array_job_ids)   # colon-separated for --dependency
+    sacct_ids    = ','.join(array_job_ids)   # comma-separated for sacct -j
+    label        = group_options['group_label']
+    finalizer_script = (
+        "#!/bin/bash\n"
+        f"#SBATCH --job-name={label}_done\n"
+        f"#SBATCH --partition={slurm_opts['partition']}\n"
+        f"#SBATCH --mem=256M\n"
+        f"#SBATCH --cpus-per-task=1\n"
+        f"#SBATCH --output={log_dir}/slurm_done.log\n"
+        f"#SBATCH --dependency=afterany:{dep_str}\n"
+        "\n"
+        f"cd {work_dir}\n"
+        f"{python_exe} -m general_code.slurm_finalizer {sacct_ids} {group_log} {label}\n"
+    )
+    finalizer_path = os.path.join(out_dir, 'job_done.sh')
+    with open(finalizer_path, 'w') as f:
+        f.write(finalizer_script)
+    fin_result = subprocess.run(['sbatch', finalizer_path], capture_output=True, text=True)
+    if fin_result.returncode == 0:
+        xprint(f'Submitted finalizer job {fin_result.stdout.strip().split()[-1]} '
+               f'(will log completion after all arrays finish).', group_log)
+    else:
+        xprint(f'Warning: finalizer job submission failed: {fin_result.stderr}', group_log)
 
 
 def param_array_str(param_array):
