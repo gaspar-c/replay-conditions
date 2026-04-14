@@ -161,7 +161,8 @@ def initialize_params(options, specified_params):
     plot_params = get_dft_plot_params()
 
     # log command line:
-    log = (options['output_dir'] + options['group_label'] + '/' + 'sim' + str(options['sim_idx']) +
+    log_prefix = 'compile' if options.get('compile_only') else 'sim' + str(options['sim_idx'])
+    log = (options['output_dir'] + options['group_label'] + '/' + log_prefix +
            '.' + options['group_param_array_str'] + '.log')
 
     # load specified parameters to override defaults:

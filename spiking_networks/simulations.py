@@ -128,6 +128,10 @@ def run_network_sim(settings):
     ordered_event_objs, ordered_event_times, ordered_event_types = sort_events(events, monitors)
 
     # --- BRIAN2 SIMULATION STARTS HERE ---
+    if settings.options.get('compile_only'):
+        built_network.run(0 * second)  # triggers Cython compilation, then returns immediately
+        return
+
     running_monitor_groups = []
     for i in range(len(ordered_event_objs)):
         time_to_next_event = ordered_event_times[i] - built_network.t

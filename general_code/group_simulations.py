@@ -11,7 +11,6 @@ import shutil
 import pickle
 import subprocess
 import multiprocessing as mltp
-from brian2 import clear_cache
 from general_code.aux_functions import xprint, seconds_to_hhmmss
 
 
@@ -20,6 +19,24 @@ _SLURM_DEFAULTS = {
     'mem': '8G',
     'cpus_per_task': 1,
 }
+
+
+def _warmup_sim_idx(group_params, n_sims):
+    """Return the index of the first sim where all numeric params are non-zero.
+
+    Using the first non-zero sim (rather than sim 1 which may have 0 connectivity)
+    ensures Brian2 compiles synapse-related Cython modules into the shared cache.
+    Falls back to n_sims if every sim has at least one zero numeric param.
+    """
+    for idx in range(1, n_sims + 1):
+        values = []
+        for param_array in group_params.values():
+            val = param_array[idx - 1] if idx - 1 < len(param_array) else param_array[-1]
+            if isinstance(val, (int, float)):
+                values.append(val)
+        if values and all(v != 0 for v in values):
+            return idx
+    return n_sims
 
 
 def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_log):
@@ -38,6 +55,13 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
     with open(pkl_path, 'wb') as f:
         pickle.dump({'group_options': group_options, 'group_params': group_params}, f)
 
+    # Separate pickle for the warmup worker: same params but with compile_only=True
+    warmup_options = dict(group_options)
+    warmup_options['compile_only'] = True
+    warmup_pkl_path = os.path.join(out_dir, 'slurm_params_warmup.pkl')
+    with open(warmup_pkl_path, 'wb') as f:
+        pickle.dump({'group_options': warmup_options, 'group_params': group_params}, f)
+
     # Slurm options: defaults, overridden by group_options['slurm'] if present
     slurm_opts = dict(_SLURM_DEFAULTS)
     slurm_opts.update(group_options.get('slurm', {}))
@@ -55,9 +79,12 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
         + f"#SBATCH --mem={slurm_opts['mem']}\n"
         f"#SBATCH --cpus-per-task={slurm_opts['cpus_per_task']}\n"
     )
-    worker_cmd = f"{python_exe} -m general_code.slurm_worker {pkl_path} {module_path} {func_name}"
+    worker_cmd        = f"{python_exe} -m general_code.slurm_worker {pkl_path} {module_path} {func_name}"
+    warmup_worker_cmd = f"{python_exe} -m general_code.slurm_worker {warmup_pkl_path} {module_path} {func_name}"
 
-    # --- warmup script: runs sim 1 and populates the shared Brian2 cache ---
+    # --- warmup script: compile-only run (t=0) to populate the shared Brian2 cache.
+    #     Exits in seconds so all n_sims array jobs can start in parallel right after. ---
+    warmup_idx = _warmup_sim_idx(group_params, n_sims)
     warmup_script = (
         "#!/bin/bash\n"
         f"#SBATCH --job-name={group_options['group_label']}_warmup\n"
@@ -65,9 +92,9 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
         + f"#SBATCH --output={log_dir}/slurm_warmup.log\n"
         "\n"
         f"export BRIAN2_CACHE_DIR={cache_dir}\n"
-        f"export SLURM_ARRAY_TASK_ID=1\n"
+        f"export SLURM_ARRAY_TASK_ID={warmup_idx}\n"
         f"cd {work_dir}\n"
-        f"{worker_cmd}\n"
+        f"{warmup_worker_cmd}\n"
     )
     warmup_path = os.path.join(out_dir, 'job_warmup.sh')
     with open(warmup_path, 'w') as f:
@@ -78,14 +105,14 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
         xprint(f'sbatch warmup failed: {warmup_result.stderr}', group_log)
         raise RuntimeError(f'sbatch warmup submission failed:\n{warmup_result.stderr}')
     warmup_job_id = warmup_result.stdout.strip().split()[-1]
-    xprint(f'Submitted warmup job {warmup_job_id} (sim 1). Script: {warmup_path}', group_log)
+    xprint(f'Submitted warmup job {warmup_job_id} (sim {warmup_idx}, first non-zero params). Script: {warmup_path}', group_log)
 
-    # --- main array: sims 2..n_sims, starts only after warmup succeeds ---
+    # --- main array: all n_sims, starts only after warmup (compile-only) succeeds ---
     array_script = (
         "#!/bin/bash\n"
         f"#SBATCH --job-name={group_options['group_label']}\n"
         + slurm_header
-        + f"#SBATCH --array=2-{n_sims}\n"
+        + f"#SBATCH --array=1-{n_sims}\n"
         f"#SBATCH --output={log_dir}/slurm_%A_%a.log\n"
         f"#SBATCH --dependency=afterok:{warmup_job_id}\n"
         "\n"
@@ -100,7 +127,7 @@ def _submit_slurm_array(group_options, group_params, run_single, n_sims, group_l
     array_result = subprocess.run(['sbatch', array_path], capture_output=True, text=True)
     if array_result.returncode == 0:
         array_job_id = array_result.stdout.strip()
-        xprint(f'Submitted {n_sims - 1} array jobs to Slurm ({array_job_id}), '
+        xprint(f'Submitted {n_sims} array jobs to Slurm ({array_job_id}), '
                f'pending warmup {warmup_job_id}. Script: {array_path}', group_log)
     else:
         xprint(f'sbatch array failed: {array_result.stderr}', group_log)
@@ -235,59 +262,49 @@ def run_sim_group(group_options, group_params, run_single):
 
     """ RUN SIMULATIONS """
     start_time = time.time()
+
+    # Run warmup sim first to populate the Brian2 Cython cache. All subsequent
+    # workers (serial or parallel) will read the pre-compiled cache instead of
+    # compiling from scratch, avoiding lock contention and stuck processes.
+    warmup_idx = _warmup_sim_idx(group_params, n_sims)
+    warmup_options = dict(group_options)
+    warmup_options['compile_only'] = True
+    xprint('Running compile-only warmup (sim %d) to populate Brian2 cache...' % warmup_idx, group_log)
+    run_single(choose_from_group_params(warmup_options, group_params, warmup_idx, n_cores))
+    all_idxs = list(range(1, n_sims + 1))
+
     if n_cores == 1:
         xprint('Running %d simulations in 1/%d CPUs' % (n_sims, cpu_cores), group_log)
-        for i in range(n_sims):
-            sim_idx = i + 1
-            if (sim_idx % 50 == 0) and (sim_idx > 1):
-                xprint('\t clearing caches before sim %d...' % sim_idx, group_log)
-                try:
-                    clear_cache('cython')
-                except FileNotFoundError:
-                    pass  # Ignore if the cache directory does not exist
-
+        for sim_idx in all_idxs:
             options_single = choose_from_group_params(group_options, group_params, sim_idx, n_cores)
             run_single(options_single)
 
     # parse n_sims by n_cores
     elif n_cores > 1:
         xprint('Running %d simulations in %d/%d CPUs' % (n_sims, n_cores, cpu_cores), group_log)
-        sim_idx = 1
-        n_sims_left = n_sims
-
-        runs_since_clear_cache = 0
+        offset = 0
 
         n_steps = (n_sims // n_cores) + 1
         for k in range(n_steps):
-            if runs_since_clear_cache > 100:
-                runs_since_clear_cache = 0
-                xprint('\t clearing caches before sim %d...' % sim_idx, group_log)
-                try:
-                    clear_cache('cython')
-                except FileNotFoundError:
-                    pass  # Ignore if the cache directory does not exist
-
+            n_sims_left = n_sims - offset
             if n_sims_left > 0:
                 n_cores_step = min(n_cores, n_sims_left)
+                batch = all_idxs[offset:offset + n_cores_step]
 
-                xprint('\t running simulations %d-%d in %d CPUs' % (sim_idx, sim_idx + n_cores_step - 1,
-                                                                    n_cores_step), group_log)
+                xprint('\t running simulations %d-%d in %d CPUs' % (batch[0], batch[-1], n_cores_step), group_log)
 
                 start_step_time = time.time()
 
-                settings_array = [None] * n_cores_step
-                for i in range(n_cores_step):
-                    settings_array[i] = choose_from_group_params(group_options, group_params, sim_idx, n_cores_step)
-                    sim_idx += 1
-                    runs_since_clear_cache += 1
+                settings_array = [choose_from_group_params(group_options, group_params, sim_idx, n_cores_step)
+                                  for sim_idx in batch]
+                offset += n_cores_step
 
                 p = mltp.Pool(n_cores_step)
                 p.map(run_single, settings_array)
-                n_sims_left -= n_cores_step
 
                 end_step_time = time.time() - start_step_time
                 xprint('\t\t %s: finished step in %s. %d simulations left...' %
-                       (time.strftime("%H:%M:%S"), seconds_to_hhmmss(end_step_time), n_sims_left), group_log)
+                       (time.strftime("%H:%M:%S"), seconds_to_hhmmss(end_step_time), n_sims - offset), group_log)
 
     else:
         raise ValueError('Number of cores must be >= 1!')
