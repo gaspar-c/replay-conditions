@@ -337,60 +337,58 @@ class ConnMorphSequence:
         else:
             xprint('\t no connections created; probability is 0', log)
 
-        # create per-assembly recurrent and feedforward connections
-        for i in range(net_objects.n_asb):
-            # recurrent (within-assembly) connections
-            xprint('%s->%s (assembly %d):' % (str_pre.upper(), str_post.upper(), i + 1), log)
-
-            if self.prob_rc > 0:
-                # build connectivity for this assembly
-                conn_rc_name = 'conn_' + str_ij + '_rc_' + str(i + 1)
-                conn_rc = ConnectivityMatrix(self.prob_rc, n_pre_asb, n_post_asb, conn_rc_name,
+        # recurrent (within-assembly) connections — one Synapses object for all assemblies
+        if self.prob_rc > 0:
+            all_rc_pre, all_rc_post = [], []
+            for i in range(net_objects.n_asb):
+                xprint('%s->%s (assembly %d, recurrent):' % (str_pre.upper(), str_post.upper(), i + 1), log)
+                conn_rc = ConnectivityMatrix(self.prob_rc, n_pre_asb, n_post_asb,
+                                             'conn_' + str_ij + '_rc_' + str(i + 1),
                                              fixed_size=self.conn_fixed)
                 conn_rc.create_conn(int(rc_seeds[i]), log=log)
+                all_rc_pre.append(conn_rc.pre_idx + i * n_pre_asb)
+                all_rc_post.append(conn_rc.post_idx + i * n_post_asb)
 
-                syn_rc = Synapses(pop_pre[i * n_pre_asb:(i + 1) * n_pre_asb],
-                                  pop_post[i * n_post_asb:(i + 1) * n_post_asb],
-                                  model=self.syn_model.model_eqs,
-                                  on_pre=self.syn_model.on_pre_eqs,
-                                  on_post=self.syn_model.on_post_eqs,
-                                  delay=self.syn_model.latency.get_param(),
-                                  method='euler',
-                                  name='syn_' + self.syn_model.name + '_rc_' + str(i + 1))
-                syn_rc.connect(i=conn_rc.pre_idx, j=conn_rc.post_idx)
-                self.syn_model.attr_params(syn_rc)
-                built_network.add(syn_rc)
-            else:
-                xprint('\t no recurrent connections created; probability is 0', log)
+            syn_rc = Synapses(pop_pre, pop_post,
+                              model=self.syn_model.model_eqs,
+                              on_pre=self.syn_model.on_pre_eqs,
+                              on_post=self.syn_model.on_post_eqs,
+                              delay=self.syn_model.latency.get_param(),
+                              method='euler',
+                              name='syn_' + self.syn_model.name + '_rc')
+            syn_rc.connect(i=np.concatenate(all_rc_pre), j=np.concatenate(all_rc_post))
+            self.syn_model.attr_params(syn_rc)
+            built_network.add(syn_rc)
+        else:
+            xprint('%s->%s: no recurrent connections created; probability is 0' % (
+                str_pre.upper(), str_post.upper()), log)
 
-            # feedforward connections to the next assembly
-            ff_pre_idx = i
-            ff_post_idx = i + 1
-            if i == net_objects.n_asb - 1:
-                break
-
-            xprint('%s (asb %d) -> %s (asb %d):' % (str_pre.upper(), ff_pre_idx + 1,
-                                                    str_post.upper(), ff_post_idx + 1), log)
-
-            if self.prob_ff > 0:
-                conn_ff_name = 'conn_' + str_ij + '_ff_' + str(ff_pre_idx + 1)
-                conn_ff = ConnectivityMatrix(self.prob_ff, n_pre_asb, n_post_asb, conn_ff_name,
+        # feedforward (assembly i -> i+1) connections — one Synapses object for all pairs
+        if self.prob_ff > 0:
+            all_ff_pre, all_ff_post = [], []
+            for i in range(net_objects.n_asb - 1):
+                xprint('%s (asb %d) -> %s (asb %d):' % (str_pre.upper(), i + 1,
+                                                         str_post.upper(), i + 2), log)
+                conn_ff = ConnectivityMatrix(self.prob_ff, n_pre_asb, n_post_asb,
+                                             'conn_' + str_ij + '_ff_' + str(i + 1),
                                              fixed_size=self.conn_fixed)
                 conn_ff.create_conn(int(ff_seeds[i]), log=log)
+                all_ff_pre.append(conn_ff.pre_idx + i * n_pre_asb)
+                all_ff_post.append(conn_ff.post_idx + (i + 1) * n_post_asb)
 
-                syn_ff = Synapses(pop_pre[ff_pre_idx * n_pre_asb:(ff_pre_idx + 1) * n_pre_asb],
-                                  pop_post[ff_post_idx * n_post_asb:(ff_post_idx + 1) * n_post_asb],
-                                  model=self.syn_model.model_eqs,
-                                  on_pre=self.syn_model.on_pre_eqs,
-                                  on_post=self.syn_model.on_post_eqs,
-                                  delay=self.syn_model.latency.get_param(),
-                                  method='euler',
-                                  name='syn_' + self.syn_model.name + '_ff_' + str(ff_pre_idx + 1))
-                syn_ff.connect(i=conn_ff.pre_idx, j=conn_ff.post_idx)
-                self.syn_model.attr_params(syn_ff)
-                built_network.add(syn_ff)
-            else:
-                xprint('\t no feedforward connections created; probability is 0', log)
+            syn_ff = Synapses(pop_pre, pop_post,
+                              model=self.syn_model.model_eqs,
+                              on_pre=self.syn_model.on_pre_eqs,
+                              on_post=self.syn_model.on_post_eqs,
+                              delay=self.syn_model.latency.get_param(),
+                              method='euler',
+                              name='syn_' + self.syn_model.name + '_ff')
+            syn_ff.connect(i=np.concatenate(all_ff_pre), j=np.concatenate(all_ff_post))
+            self.syn_model.attr_params(syn_ff)
+            built_network.add(syn_ff)
+        else:
+            xprint('%s->%s: no feedforward connections created; probability is 0' % (
+                str_pre.upper(), str_post.upper()), log)
 
 
 class ConnRandomToSequence:
@@ -455,28 +453,29 @@ class ConnRandomToSequence:
         np.random.seed(self.conn_seed)
         rc_seeds = np.random.randint(1, high=999, size=net_objects.n_asb, dtype=int)
 
-        # iterate over assemblies and create identical-style connections
-        for i in range(net_objects.n_asb):
-            xprint('%s->%s (assembly %d):' % (str_pre.upper(), str_post.upper(), i + 1), log)
-
-            if self.prob > 0:
-                conn_rc_name = 'conn_' + str_ij + '_rc_' + str(i + 1)
-                conn_rc = ConnectivityMatrix(self.prob, n_pre, n_post_asb, conn_rc_name,
+        # all assembly connections in one Synapses object
+        if self.prob > 0:
+            all_pre, all_post = [], []
+            for i in range(net_objects.n_asb):
+                xprint('%s->%s (assembly %d):' % (str_pre.upper(), str_post.upper(), i + 1), log)
+                conn_rc = ConnectivityMatrix(self.prob, n_pre, n_post_asb,
+                                             'conn_' + str_ij + '_rc_' + str(i + 1),
                                              fixed_size=self.conn_fixed)
                 conn_rc.create_conn(int(rc_seeds[i]), log=log)
+                all_pre.append(conn_rc.pre_idx)
+                all_post.append(conn_rc.post_idx + i * n_post_asb)
 
-                syn_rc = Synapses(pop_pre,
-                                  pop_post[i * n_post_asb:(i + 1) * n_post_asb],
-                                  model=self.syn_model.model_eqs,
-                                  on_pre=self.syn_model.on_pre_eqs,
-                                  on_post=self.syn_model.on_post_eqs,
-                                  delay=self.syn_model.latency.get_param(),
-                                  method='euler',
-                                  name='syn_' + self.syn_model.name + '_rc_' + str(i + 1))
-                syn_rc.connect(i=conn_rc.pre_idx, j=conn_rc.post_idx)
-                self.syn_model.attr_params(syn_rc)
-
-                built_network.add(syn_rc)
-            else:
-                xprint('\t no recurrent connections created; probability is 0', log)
+            syn_rc = Synapses(pop_pre, pop_post,
+                              model=self.syn_model.model_eqs,
+                              on_pre=self.syn_model.on_pre_eqs,
+                              on_post=self.syn_model.on_post_eqs,
+                              delay=self.syn_model.latency.get_param(),
+                              method='euler',
+                              name='syn_' + self.syn_model.name + '_rc')
+            syn_rc.connect(i=np.concatenate(all_pre), j=np.concatenate(all_post))
+            self.syn_model.attr_params(syn_rc)
+            built_network.add(syn_rc)
+        else:
+            xprint('%s->%s: no connections created; probability is 0' % (
+                str_pre.upper(), str_post.upper()), log)
                 

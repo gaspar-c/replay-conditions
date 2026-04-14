@@ -164,7 +164,7 @@ def run_simulation(options):
     stdp_on_time = 0 * second
     stdp_off_time = 5 * second
 
-    syn_pb_pops = ['syn_pb_bg'] + ['syn_pb_rc_%d' % k for k in range(1, network_objects.n_asb + 1)]
+    syn_pb_pops = ['syn_pb_bg', 'syn_pb_rc']
     for target_pop in syn_pb_pops:
         events.append(ChangeAttribute(onset=stdp_on_time,
                                         target=target_pop,
